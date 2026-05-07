@@ -30,10 +30,6 @@ def create_app():
     bcrypt.init_app(app)
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-    # Ensure indexes on startup
-    with app.app_context():
-        _ensure_indexes()
-
     # Blueprints
     from app.routes.auth import auth_bp
     from app.routes.substations import substations_bp
@@ -53,12 +49,20 @@ def create_app():
     app.register_blueprint(dashboard_bp, url_prefix="/api/v1/dashboard")
     app.register_blueprint(views_bp)
 
+    # Ensure indexes after everything is registered
+    with app.app_context():
+        try:
+            _ensure_indexes()
+        except Exception as e:
+            app.logger.warning(f"Index creation skipped: {e}")
+
     return app
 
 
 def _ensure_indexes():
-    from app import mongo
     db = mongo.db
+    if db is None:
+        return
     db.users.create_index("username", unique=True)
     db.users.create_index("email", unique=True)
     db.substations.create_index("name")
