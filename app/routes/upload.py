@@ -43,5 +43,5 @@ def download_template():
         io.BytesIO(xlsx_bytes),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name="GEC_II_SLD_Import_Template.xlsx",
+        download_name="APDCL_SubStation_Import_Template.xlsx",
     )

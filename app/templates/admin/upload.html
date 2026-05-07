@@ -8,7 +8,12 @@
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
   <div class="card">
-    <div class="card-header"><span class="dot11"></span>File Upload</div>
+    <div class="card-header" style="justify-content:space-between;">
+      <span style="display:flex;align-items:center;gap:8px;">
+        <span class="dot11"></span>File Upload
+      </span>
+      <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()">⬇ Download Excel Template</button>
+    </div>
     <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
       <div class="drop-icon">📂</div>
       <div class="drop-label">Click or drag & drop your Excel/CSV file here</div>
@@ -197,7 +202,7 @@ async function downloadTemplate() {
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = "GEC_II_SLD_Import_Template.xlsx";
+  a.href = url; a.download = "APDCL_SubStation_Import_Template.xlsx";
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
   toast("Template downloaded", "success");
