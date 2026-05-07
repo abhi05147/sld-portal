@@ -1,8 +1,10 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 from app import mongo
 from app.models import audit_log_doc
 from app.services.importer import ExcelImporter
+from app.services.template_generator import generate_template
+import io
 
 upload_bp = Blueprint("upload", __name__)
 
@@ -27,3 +29,19 @@ def upload_excel():
         audit_log_doc(get_jwt_identity(), "excel_upload", detail=str(summary))
     )
     return jsonify(summary)
+
+
+@upload_bp.get("/template")
+@jwt_required()
+def download_template():
+    """Download the blank Excel import template."""
+    try:
+        xlsx_bytes = generate_template()
+    except Exception as e:
+        return jsonify(error=f"Template generation failed: {e}"), 500
+    return send_file(
+        io.BytesIO(xlsx_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="GEC_II_SLD_Import_Template.xlsx",
+    )

@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if mode == 'edit' else 'New' }} Substation — GEC-II SLD Portal{% endblock %}
+{% block content %}
+
+<div style="margin-bottom:20px;">
+  <div style="font-size:.82rem;color:var(--text-sub);margin-bottom:4px;">
+    <a href="/dashboard" style="color:var(--accent11);text-decoration:none">Dashboard</a>
+    <span style="margin:0 6px">›</span>
+    <span id="page-breadcrumb">{{ 'Edit Substation' if mode == 'edit' else 'New Substation' }}</span>
+  </div>
+  <h1 style="font-size:1.5rem;font-weight:700;" id="page-title">
+    {{ 'Edit Substation' if mode == 'edit' else 'Add New Substation' }}
+  </h1>
+</div>
+
+<!-- Step Indicator -->
+<div style="display:flex;align-items:center;gap:0;margin-bottom:28px;">
+  {% for i, label in [(1,'Substation Details'),(2,'Transformers'),(3,'Feeders')] %}
+  <div class="step-item" id="step-indicator-{{i}}" style="display:flex;align-items:center;gap:0;">
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;
+                background:{{ 'var(--accent11)' if i==1 else 'var(--surface2)' }};
+                color:{{ 'white' if i==1 else 'var(--text-sub)' }};
+                font-weight:700;font-size:.88rem;transition:all .3s;"
+         id="step-badge-{{i}}">
+      <span style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.25);
+                   display:flex;align-items:center;justify-content:center;font-size:.8rem;">{{i}}</span>
+      {{label}}
+    </div>
+    {% if i < 3 %}
+    <div style="width:32px;height:2px;background:var(--border);flex-shrink:0;" id="step-line-{{i}}"></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── STEP 1: Substation Details ──────────────────────────────────────── -->
+<div id="step-1">
+  <div class="card">
+    <div class="card-header"><span class="dot33"></span>Substation Master Details</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="form-group">
+        <label>Substation Name *</label>
+        <input type="text" id="ss-name" placeholder="e.g. Amingaon 33/11kV SS"/>
+      </div>
+      <div class="form-group">
+        <label>Type</label>
+        <select id="ss-type">
+          <option value="Conventional">Conventional</option>
+          <option value="Compact">Compact</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Primary GSS (132/33 kV Source) *</label>
+        <input type="text" id="ss-gss-primary" placeholder="e.g. 132kV Sishugram GSS" list="gss-list"/>
+        <datalist id="gss-list"></datalist>
+      </div>
+      <div class="form-group">
+        <label>Alternate GSS</label>
+        <input type="text" id="ss-gss-alternate" placeholder="Optional"/>
+      </div>
+      <div class="form-group">
+        <label>Circle</label>
+        <input type="text" id="ss-circle" placeholder="e.g. GEC-II" value="GEC-II"/>
+      </div>
+      <div class="form-group">
+        <label>Region</label>
+        <input type="text" id="ss-region" placeholder="e.g. LAR"/>
+      </div>
+      <div class="form-group">
+        <label>T&C</label>
+        <input type="text" id="ss-tnc" placeholder="e.g. GEC-II Amingaon"/>
+      </div>
+      <div class="form-group">
+        <label>ESD</label>
+        <input type="text" id="ss-esd" placeholder="e.g. Amingaon"/>
+      </div>
+      <div class="form-group">
+        <label>Latitude (decimal)</label>
+        <input type="number" id="ss-lat" placeholder="e.g. 26.1839" step="0.0001"/>
+      </div>
+      <div class="form-group">
+        <label>Longitude (decimal)</label>
+        <input type="number" id="ss-lon" placeholder="e.g. 91.6667" step="0.0001"/>
+      </div>
+      <div class="form-group">
+        <label>Tapping Info</label>
+        <input type="text" id="ss-tapping" placeholder="Optional"/>
+      </div>
+      <div class="form-group">
+        <label>LILO Info</label>
+        <input type="text" id="ss-lilo" placeholder="Optional"/>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-primary" onclick="submitStep1()">Next: Add Transformers →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 2: Transformers ─────────────────────────────────────────────── -->
+<div id="step-2" style="display:none;">
+  <div class="card">
+    <div class="card-header"><span class="dot33"></span>Power Transformer Details</div>
+    <div id="transformer-rows"></div>
+    <button class="btn btn-ghost" style="margin-top:12px;" onclick="addTransformerRow()">+ Add Transformer</button>
+    <div style="display:flex;justify-content:space-between;margin-top:20px;">
+      <button class="btn btn-ghost" onclick="goStep(1)">← Back</button>
+      <button class="btn btn-primary" onclick="submitStep2()">Next: Add Feeders →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 3: Feeders ──────────────────────────────────────────────────── -->
+<div id="step-3" style="display:none;">
+  <div class="card">
+    <div class="card-header"><span class="dot11"></span>Feeder Details</div>
+    <p style="font-size:.85rem;color:var(--text-sub);margin-bottom:14px;">
+      Add all feeders for this substation. Feeder type is auto-detected from name but can be overridden.
+    </p>
+    <div id="feeder-rows"></div>
+    <button class="btn btn-ghost" style="margin-top:12px;" onclick="addFeederRow()">+ Add Feeder</button>
+    <div style="display:flex;justify-content:space-between;margin-top:20px;">
+      <button class="btn btn-ghost" onclick="goStep(2)">← Back</button>
+      <button class="btn btn-primary" onclick="submitAll()" id="submit-all-btn">
+        {{ '💾 Save Changes' if mode == 'edit' else '✅ Create Substation' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MODE  = "{{ mode }}";
+const SS_ID = "{{ ss_id or '' }}";
+let currentStep = 1;
+let savedSSId   = SS_ID || null;
+
+// ── Step navigation ────────────────────────────────────────────────────────
+function goStep(n) {
+  document.getElementById(`step-${currentStep}`).style.display = 'none';
+  document.getElementById(`step-${n}`).style.display = 'block';
+  // Update step indicators
+  for (let i = 1; i <= 3; i++) {
+    const badge = document.getElementById(`step-badge-${i}`);
+    if (i === n) {
+      badge.style.background = 'var(--accent11)';
+      badge.style.color = 'white';
+    } else if (i < n) {
+      badge.style.background = 'var(--accent-g, #006600)';
+      badge.style.color = 'white';
+    } else {
+      badge.style.background = 'var(--surface2)';
+      badge.style.color = 'var(--text-sub)';
+    }
+  }
+  currentStep = n;
+}
+
+// ── Step 1 — Substation ───────────────────────────────────────────────────
+async function submitStep1() {
+  const name = document.getElementById('ss-name').value.trim();
+  const gss  = document.getElementById('ss-gss-primary').value.trim();
+  if (!name) { toast('Substation name is required', 'error'); return; }
+  if (!gss)  { toast('Primary GSS is required', 'error'); return; }
+
+  const body = {
+    name,
+    type:          document.getElementById('ss-type').value,
+    gss_primary:   gss,
+    gss_alternate: document.getElementById('ss-gss-alternate').value.trim() || null,
+    circle:        document.getElementById('ss-circle').value.trim(),
+    region:        document.getElementById('ss-region').value.trim(),
+    tnc:           document.getElementById('ss-tnc').value.trim(),
+    esd:           document.getElementById('ss-esd').value.trim(),
+    gps_lat:       parseFloat(document.getElementById('ss-lat').value) || null,
+    gps_lon:       parseFloat(document.getElementById('ss-lon').value) || null,
+    tapping_info:  document.getElementById('ss-tapping').value.trim() || null,
+    lilo_info:     document.getElementById('ss-lilo').value.trim() || null,
+  };
+
+  const url    = savedSSId ? `/api/v1/substations/${savedSSId}` : '/api/v1/substations/';
+  const method = savedSSId ? 'PUT' : 'POST';
+
+  const res = await apiFetch(url, { method, body: JSON.stringify(body) });
+  if (!res || !res.ok) {
+    const d = await res.json();
+    toast(d.error || 'Failed to save substation', 'error'); return;
+  }
+  if (!savedSSId) {
+    const d = await res.json();
+    savedSSId = d.id;
+  }
+  toast('Substation details saved', 'success');
+  goStep(2);
+  if (MODE === 'edit') loadTransformers();
+  else addTransformerRow();
+}
+
+// ── Step 2 — Transformers ─────────────────────────────────────────────────
+let trCount = 0;
+function addTransformerRow(data = {}) {
+  trCount++;
+  const id = `tr-${trCount}`;
+  const div = document.createElement('div');
+  div.id = id;
+  div.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;position:relative;';
+  div.innerHTML = `
+    <div style="font-weight:700;font-size:.9rem;margin-bottom:12px;color:var(--accent33)">
+      Power Transformer ${trCount}
+      <input type="hidden" class="tr-id" value="${data._id || ''}"/>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div class="form-group" style="margin:0">
+        <label>Capacity (MVA) *</label>
+        <input type="number" class="tr-cap" step="0.1" value="${data.capacity_mva||''}" placeholder="e.g. 2.5"/>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Make</label>
+        <input type="text" class="tr-make" value="${data.make||''}" placeholder="e.g. BHEL"/>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Year of Manufacture</label>
+        <input type="number" class="tr-yom" value="${data.yom||''}" placeholder="e.g. 2010"/>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Max Loading (MW)</label>
+        <input type="number" class="tr-maxload" step="0.1" value="${data.max_loading_mw||''}" placeholder="e.g. 1.8"/>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Max OTI (°C)</label>
+        <input type="number" class="tr-oti" step="0.1" value="${data.max_oti_c||''}" placeholder="e.g. 75"/>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Max WTI (°C)</label>
+        <input type="number" class="tr-wti" step="0.1" value="${data.max_wti_c||''}" placeholder="e.g. 65"/>
+      </div>
+    </div>
+    <button onclick="this.closest('[id]').remove()" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--accent33);cursor:pointer;font-size:1.1rem;">✕</button>
+  `;
+  document.getElementById('transformer-rows').appendChild(div);
+}
+
+async function loadTransformers() {
+  const res = await apiFetch(`/api/v1/substations/${savedSSId}`);
+  if (!res || !res.ok) return;
+  const d = await res.json();
+  document.getElementById('transformer-rows').innerHTML = '';
+  trCount = 0;
+  (d.transformers || []).forEach(tr => addTransformerRow(tr));
+  if (!d.transformers || !d.transformers.length) addTransformerRow();
+}
+
+async function submitStep2() {
+  if (!savedSSId) { toast('Save substation details first', 'error'); return; }
+  const rows = document.querySelectorAll('#transformer-rows > div');
+  for (const row of rows) {
+    const cap = parseFloat(row.querySelector('.tr-cap').value);
+    if (!cap) { toast('Transformer capacity is required', 'error'); return; }
+    const body = {
+      substation_id: savedSSId,
+      capacity_mva:  cap,
+      make:          row.querySelector('.tr-make').value.trim() || null,
+      yom:           parseInt(row.querySelector('.tr-yom').value) || null,
+      max_loading_mw:parseFloat(row.querySelector('.tr-maxload').value) || null,
+      max_oti_c:     parseFloat(row.querySelector('.tr-oti').value) || null,
+      max_wti_c:     parseFloat(row.querySelector('.tr-wti').value) || null,
+    };
+    const trId = row.querySelector('.tr-id').value;
+    const url    = trId ? `/api/v1/transformers/${trId}` : `/api/v1/transformers/substation/${savedSSId}`;
+    const method = trId ? 'PUT' : 'POST';
+    await apiFetch(url, { method, body: JSON.stringify(body) });
+  }
+  toast('Transformers saved', 'success');
+  goStep(3);
+  if (MODE === 'edit') loadFeeders();
+  else addFeederRow();
+}
+
+// ── Step 3 — Feeders ──────────────────────────────────────────────────────
+let fdCount = 0;
+const FEEDER_TYPES = [
+  ['incoming_33kv','33kV Incoming'],
+  ['incomer_11kv','11kV Incomer (TR LV side)'],
+  ['outgoing_11kv','11kV Outgoing'],
+  ['station_transformer','Station Transformer'],
+];
+
+function addFeederRow(data = {}) {
+  fdCount++;
+  const id = `fd-${fdCount}`;
+  const sg = data.switchgear || {};
+  const mt = data.meter || {};
+  const div = document.createElement('div');
+  div.id = id;
+  div.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px;position:relative;';
+  div.innerHTML = `
+    <input type="hidden" class="fd-id" value="${data._id || ''}"/>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="form-group" style="margin:0">
+        <label>Feeder Name *</label>
+        <input type="text" class="fd-name" value="${data.name||''}" placeholder="e.g. 11kV AIIDIC Feeder"/>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Voltage</label>
+        <select class="fd-volt">
+          <option value="11" ${(data.voltage_kv||11)==11?'selected':''}>11 kV</option>
+          <option value="33" ${(data.voltage_kv)==33?'selected':''}>33 kV</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Feeder Type</label>
+        <select class="fd-type">
+          ${FEEDER_TYPES.map(([v,l])=>`<option value="${v}" ${data.feeder_type===v?'selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;display:flex;flex-direction:column;justify-content:flex-end;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" class="fd-ar" ${data.is_autorecloser?'checked':''}/>
+          <span style="font-size:.8rem;font-weight:700">Is Autorecloser?</span>
+        </label>
+      </div>
+    </div>
+    <!-- Collapsible meter/switchgear -->
+    <details style="margin-top:6px;">
+      <summary style="cursor:pointer;font-size:.82rem;font-weight:700;color:var(--text-sub);padding:4px 0;">
+        ▸ Meter & Switchgear Details (optional)
+      </summary>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px;">
+        <div class="form-group" style="margin:0"><label>Meter No.</label><input type="text" class="mt-num" value="${mt.number||''}"/></div>
+        <div class="form-group" style="margin:0"><label>Meter Make</label><input type="text" class="mt-make" value="${mt.make||''}"/></div>
+        <div class="form-group" style="margin:0"><label>CT Ratio</label><input type="text" class="mt-ctr" value="${mt.ctr||''}" placeholder="e.g. 200/5A"/></div>
+        <div class="form-group" style="margin:0"><label>Meter Factor (MF)</label><input type="number" class="mt-mf" value="${mt.mf||''}" step="0.001"/></div>
+        <div class="form-group" style="margin:0"><label>VCB Type</label>
+          <select class="sg-vcbtype">
+            <option value="">—</option>
+            <option value="Indoor" ${sg.vcb_type==='Indoor'?'selected':''}>Indoor</option>
+            <option value="Outdoor" ${sg.vcb_type==='Outdoor'?'selected':''}>Outdoor</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>Panel Make</label><input type="text" class="sg-panelmake" value="${sg.panel_make||''}"/></div>
+        <div class="form-group" style="margin:0"><label>VCB Make</label><input type="text" class="sg-vcbmake" value="${sg.vcb_make||''}"/></div>
+        <div class="form-group" style="margin:0"><label>VCB Status</label>
+          <select class="sg-vcbstatus">
+            <option value="">—</option>
+            <option value="Working" ${sg.vcb_status==='Working'?'selected':''}>Working</option>
+            <option value="Defective" ${sg.vcb_status==='Defective'?'selected':''}>Defective</option>
+            <option value="Not Available" ${sg.vcb_status==='Not Available'?'selected':''}>Not Available</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>OC/EF Relay Type</label>
+          <select class="sg-relay">
+            <option value="">—</option>
+            <option value="Numerical" ${sg.oc_ef_relay_type==='Numerical'?'selected':''}>Numerical</option>
+            <option value="Electromechanical" ${sg.oc_ef_relay_type==='Electromechanical'?'selected':''}>Electromechanical</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>Relay Make</label><input type="text" class="sg-relaymake" value="${sg.relay_make||''}"/></div>
+        <div class="form-group" style="margin:0"><label>Year Commissioned</label><input type="number" class="sg-yoc" value="${sg.year_commissioned||''}"/></div>
+        <div class="form-group" style="margin:0"><label>Remarks</label><input type="text" class="fd-remarks" value="${data.remarks||''}"/></div>
+      </div>
+    </details>
+    <button onclick="this.closest('[id]').remove()" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--accent33);cursor:pointer;font-size:1.1rem;">✕</button>
+  `;
+  document.getElementById('feeder-rows').appendChild(div);
+}
+
+async function loadFeeders() {
+  const res = await apiFetch(`/api/v1/feeders/substation/${savedSSId}`);
+  if (!res || !res.ok) return;
+  const fds = await res.json();
+  document.getElementById('feeder-rows').innerHTML = '';
+  fdCount = 0;
+  fds.filter(f => f.feeder_type !== 'bus_coupler').forEach(f => addFeederRow(f));
+  if (!fds.length) addFeederRow();
+}
+
+async function submitAll() {
+  if (!savedSSId) { toast('Save substation details first', 'error'); return; }
+  const btn = document.getElementById('submit-all-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const rows = document.querySelectorAll('#feeder-rows > div');
+  let errors = 0;
+  for (const row of rows) {
+    const name = row.querySelector('.fd-name').value.trim();
+    if (!name) continue;
+    const body = {
+      name,
+      voltage_kv:    parseInt(row.querySelector('.fd-volt').value),
+      feeder_type:   row.querySelector('.fd-type').value,
+      is_autorecloser: row.querySelector('.fd-ar').checked,
+      remarks:       row.querySelector('.fd-remarks').value.trim() || null,
+      meter: {
+        number:  row.querySelector('.mt-num').value.trim() || null,
+        make:    row.querySelector('.mt-make').value.trim() || null,
+        ctr:     row.querySelector('.mt-ctr').value.trim() || null,
+        mf:      parseFloat(row.querySelector('.mt-mf').value) || null,
+      },
+      switchgear: {
+        vcb_type:           row.querySelector('.sg-vcbtype').value || null,
+        panel_make:         row.querySelector('.sg-panelmake').value.trim() || null,
+        vcb_make:           row.querySelector('.sg-vcbmake').value.trim() || null,
+        vcb_status:         row.querySelector('.sg-vcbstatus').value || null,
+        oc_ef_relay_type:   row.querySelector('.sg-relay').value || null,
+        relay_make:         row.querySelector('.sg-relaymake').value.trim() || null,
+        year_commissioned:  parseInt(row.querySelector('.sg-yoc').value) || null,
+      },
+    };
+    const fdId   = row.querySelector('.fd-id').value;
+    const url    = fdId ? `/api/v1/feeders/${fdId}` : `/api/v1/feeders/substation/${savedSSId}`;
+    const method = fdId ? 'PUT' : 'POST';
+    const res = await apiFetch(url, { method, body: JSON.stringify(body) });
+    if (!res || !res.ok) errors++;
+  }
+
+  btn.disabled = false;
+  btn.textContent = MODE === 'edit' ? '💾 Save Changes' : '✅ Create Substation';
+
+  if (errors) {
+    toast(`Saved with ${errors} error(s) — check console`, 'error');
+  } else {
+    toast('Substation saved successfully!', 'success');
+    setTimeout(() => window.location.href = `/sld/${savedSSId}`, 1200);
+  }
+}
+
+// ── Load GSS list for autocomplete ────────────────────────────────────────
+async function loadGSSList() {
+  const res = await apiFetch('/api/v1/dashboard/hierarchy');
+  if (!res || !res.ok) return;
+  const tree = await res.json();
+  const dl = document.getElementById('gss-list');
+  tree.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.gss_name;
+    dl.appendChild(opt);
+  });
+}
+
+// ── Load existing data in edit mode ──────────────────────────────────────
+async function loadExistingData() {
+  if (MODE !== 'edit' || !SS_ID) return;
+  const res = await apiFetch(`/api/v1/substations/${SS_ID}`);
+  if (!res || !res.ok) return;
+  const ss = await res.json();
+  document.getElementById('ss-name').value         = ss.name || '';
+  document.getElementById('ss-type').value         = ss.type || 'Conventional';
+  document.getElementById('ss-gss-primary').value  = ss.gss_primary || '';
+  document.getElementById('ss-gss-alternate').value= ss.gss_alternate || '';
+  document.getElementById('ss-circle').value       = ss.circle || '';
+  document.getElementById('ss-region').value       = ss.region || '';
+  document.getElementById('ss-tnc').value          = ss.tnc || '';
+  document.getElementById('ss-esd').value          = ss.esd || '';
+  document.getElementById('ss-lat').value          = ss.gps?.lat || '';
+  document.getElementById('ss-lon').value          = ss.gps?.lon || '';
+  document.getElementById('ss-tapping').value      = ss.tapping_info || '';
+  document.getElementById('ss-lilo').value         = ss.lilo_info || '';
+  document.getElementById('page-title').textContent = `Edit: ${ss.name}`;
+  document.getElementById('page-breadcrumb').textContent = `Edit: ${ss.name}`;
+}
+
+if (!Auth.isLoggedIn()) Auth.redirect();
+const u = Auth.getUser();
+if (!['admin','engineer'].includes(u?.role)) {
+  toast('Engineer or Admin access required', 'error');
+  setTimeout(() => window.location.href = '/dashboard', 1500);
+}
+
+loadGSSList();
+loadExistingData();
+</script>
+{% endblock %}

@@ -191,6 +191,18 @@ function showResult(type, title, msg, errors, summary) {
   panel.innerHTML = html;
 }
 
+async function downloadTemplate() {
+  const res = await apiFetch("/api/v1/upload/template");
+  if (!res || !res.ok) { toast("Template download failed", "error"); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "GEC_II_SLD_Import_Template.xlsx";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast("Template downloaded", "success");
+}
+
 const user = Auth.getUser();
 if (!Auth.isLoggedIn() || !['admin','engineer'].includes(user?.role)) {
   window.location.href = '/dashboard';

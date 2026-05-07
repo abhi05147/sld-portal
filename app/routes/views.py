@@ -9,6 +9,11 @@ def login_page():
     return render_template("auth/login.html")
 
 
+@views_bp.get("/change-password")
+def change_password_page():
+    return render_template("auth/change_password.html")
+
+
 @views_bp.get("/dashboard")
 def dashboard_page():
     return render_template("dashboard/index.html")
@@ -17,6 +22,16 @@ def dashboard_page():
 @views_bp.get("/sld/<ss_id>")
 def sld_page(ss_id):
     return render_template("sld/index.html", ss_id=ss_id)
+
+
+@views_bp.get("/substations/new")
+def new_substation_page():
+    return render_template("substations/form.html", mode="create", ss_id=None)
+
+
+@views_bp.get("/substations/<ss_id>/edit")
+def edit_substation_page(ss_id):
+    return render_template("substations/form.html", mode="edit", ss_id=ss_id)
 
 
 @views_bp.get("/admin/users")

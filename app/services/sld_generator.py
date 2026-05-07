@@ -1,432 +1,445 @@
 """
 SVG Single-Line Diagram Generator — IEC 60617 compliant symbols.
+Based on MES Likabali SS layout.
 
-Layout engine:
-  - Reads substation topology + feeders from DB
-  - Places IEC symbols on a grid
-  - Outputs a self-contained SVG string
-
-Colour scheme (IEC practice):
+Colour scheme:
   33kV : #CC2200  (red)
   11kV : #0055CC  (blue)
   Bus  : #111111  (black)
   Earth: #006600  (green)
-  Equip: #333333  (dark grey)
 """
 from bson import ObjectId
 
+AR_KEYWORDS = {"autorecloser", "auto recloser", "tavrida", "noja", "schneider ar"}
 
-# ── IEC SVG Symbol Library ───────────────────────────────────────────────────
+def is_autorecloser(feeder: dict) -> bool:
+    if feeder.get("is_autorecloser"):
+        return True
+    sg = feeder.get("switchgear", {})
+    for field in ("vcb_type", "vcb_make", "panel_make"):
+        val = str(sg.get(field) or "").lower()
+        if any(kw in val for kw in AR_KEYWORDS):
+            return True
+    return False
+
+
+def sym_line(x1, y1, x2, y2, color="#CC2200", w=2.5):
+    return f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" stroke-width="{w}"/>'
+
 
 def sym_lightning_arrester(x, y, color="#CC2200"):
-    """IEC 60617-3: Lightning arrester — triangle pointing down + earth line."""
-    return f"""
-  <g class="sym-la" transform="translate({x},{y})">
-    <line x1="0" y1="-20" x2="0" y2="-8" stroke="{color}" stroke-width="2"/>
-    <polygon points="0,-8 -7,8 7,8" fill="none" stroke="{color}" stroke-width="1.8"/>
-    <line x1="0" y1="8" x2="0" y2="18" stroke="{color}" stroke-width="2"/>
-    <line x1="-6" y1="18" x2="6" y2="18" stroke="#006600" stroke-width="2"/>
-    <line x1="-4" y1="21" x2="4" y2="21" stroke="#006600" stroke-width="1.5"/>
-    <line x1="-2" y1="24" x2="2" y2="24" stroke="#006600" stroke-width="1"/>
+    return f"""<g class="sym-la" transform="translate({x},{y})">
+    <line x1="0" y1="-22" x2="0" y2="-10" stroke="{color}" stroke-width="2"/>
+    <polygon points="0,-10 -8,8 8,8" fill="none" stroke="{color}" stroke-width="1.8"/>
+    <line x1="0" y1="8" x2="0" y2="16" stroke="{color}" stroke-width="2"/>
+    <line x1="-7" y1="16" x2="7" y2="16" stroke="#006600" stroke-width="2.2"/>
+    <line x1="-5" y1="20" x2="5" y2="20" stroke="#006600" stroke-width="1.6"/>
+    <line x1="-2.5" y1="24" x2="2.5" y2="24" stroke="#006600" stroke-width="1"/>
+    <text x="10" y="2" font-size="8" fill="#888">LA</text>
   </g>"""
 
 
-def sym_isolator(x, y, has_earth=False, color="#CC2200"):
-    """IEC 60617: Disconnector (isolator) — open contact symbol."""
+def sym_isolator(x, y, has_earth=False, color="#CC2200", label=""):
     earth = ""
     if has_earth:
-        earth = f"""
-    <line x1="5" y1="5" x2="5" y2="15" stroke="#006600" stroke-width="1.8"/>
-    <line x1="-1" y1="15" x2="11" y2="15" stroke="#006600" stroke-width="1.8"/>
-    <line x1="1" y1="18" x2="9" y2="18" stroke="#006600" stroke-width="1.3"/>
-    <line x1="3" y1="21" x2="7" y2="21" stroke="#006600" stroke-width="1"/>"""
-    return f"""
-  <g class="sym-iso" transform="translate({x},{y})">
-    <line x1="0" y1="-15" x2="0" y2="-5" stroke="{color}" stroke-width="2"/>
-    <circle cx="0" cy="-5" r="2" fill="{color}"/>
-    <line x1="0" y1="-5" x2="10" y2="5" stroke="{color}" stroke-width="1.8"/>
-    <circle cx="10" cy="5" r="2" fill="none" stroke="{color}" stroke-width="1.5"/>
-    <line x1="10" y1="5" x2="10" y2="15" stroke="{color}" stroke-width="2"/>{earth}
+        earth = """<line x1="6" y1="8" x2="6" y2="18" stroke="#006600" stroke-width="1.8"/>
+    <line x1="0" y1="18" x2="12" y2="18" stroke="#006600" stroke-width="1.8"/>
+    <line x1="2" y1="22" x2="10" y2="22" stroke="#006600" stroke-width="1.3"/>
+    <line x1="4" y1="26" x2="8" y2="26" stroke="#006600" stroke-width="1"/>"""
+    lbl = f'<text x="14" y="4" font-size="8" fill="#888">{label}</text>' if label else ""
+    return f"""<g class="sym-iso" transform="translate({x},{y})">
+    <line x1="0" y1="-18" x2="0" y2="-6" stroke="{color}" stroke-width="2"/>
+    <circle cx="0" cy="-6" r="2.5" fill="{color}"/>
+    <line x1="0" y1="-6" x2="12" y2="6" stroke="{color}" stroke-width="1.8"/>
+    <circle cx="12" cy="6" r="2.5" fill="none" stroke="{color}" stroke-width="1.5"/>
+    <line x1="12" y1="6" x2="12" y2="18" stroke="{color}" stroke-width="2"/>
+    {earth}{lbl}
   </g>"""
 
 
 def sym_vcb(x, y, label="VCB", color="#CC2200"):
-    """IEC 60617: Circuit breaker — square with diagonal cross."""
-    return f"""
-  <g class="sym-vcb" transform="translate({x},{y})">
-    <line x1="0" y1="-20" x2="0" y2="-10" stroke="{color}" stroke-width="2"/>
-    <rect x="-10" y="-10" width="20" height="20" fill="white" stroke="{color}" stroke-width="2"/>
+    return f"""<g class="sym-vcb" transform="translate({x},{y})">
+    <line x1="0" y1="-22" x2="0" y2="-10" stroke="{color}" stroke-width="2"/>
+    <rect x="-10" y="-10" width="20" height="20" fill="white" stroke="{color}" stroke-width="2" rx="1"/>
     <line x1="-8" y1="-8" x2="8" y2="8" stroke="{color}" stroke-width="1.5"/>
     <line x1="8" y1="-8" x2="-8" y2="8" stroke="{color}" stroke-width="1.5"/>
-    <line x1="0" y1="10" x2="0" y2="20" stroke="{color}" stroke-width="2"/>
-    <text x="14" y="5" font-family="Rajdhani,sans-serif" font-size="9" fill="#333">{label}</text>
+    <line x1="0" y1="10" x2="0" y2="22" stroke="{color}" stroke-width="2"/>
+    <text x="14" y="4" font-size="9" fill="#555" font-weight="600">{label}</text>
   </g>"""
 
 
-def sym_autorecloser(x, y, color="#CC2200"):
-    """Autorecloser — circle with A label."""
-    return f"""
-  <g class="sym-ar" transform="translate({x},{y})">
-    <line x1="0" y1="-20" x2="0" y2="-12" stroke="{color}" stroke-width="2"/>
-    <circle cx="0" cy="0" r="12" fill="white" stroke="{color}" stroke-width="2"/>
-    <text x="0" y="5" text-anchor="middle" font-family="Rajdhani,sans-serif"
-          font-size="12" font-weight="700" fill="{color}">A</text>
-    <line x1="0" y1="12" x2="0" y2="20" stroke="{color}" stroke-width="2"/>
+def sym_autorecloser(x, y, label="AR", color="#CC2200"):
+    return f"""<g class="sym-ar" transform="translate({x},{y})">
+    <line x1="0" y1="-26" x2="0" y2="-14" stroke="{color}" stroke-width="2"/>
+    <circle cx="0" cy="0" r="14" fill="white" stroke="{color}" stroke-width="2"/>
+    <text x="0" y="5" text-anchor="middle" font-size="13" font-weight="700" fill="{color}">A</text>
+    <line x1="0" y1="14" x2="0" y2="26" stroke="{color}" stroke-width="2"/>
+    <text x="18" y="4" font-size="9" fill="#555" font-weight="600">{label}</text>
   </g>"""
 
 
-def sym_ct(x, y, label="CT", color="#333333"):
-    """IEC 60617: Current transformer — oval on line with label."""
-    return f"""
-  <g class="sym-ct" transform="translate({x},{y})">
+def sym_ct(x, y, label="CT", color="#555555"):
+    return f"""<g class="sym-ct" transform="translate({x},{y})">
     <line x1="0" y1="-20" x2="0" y2="20" stroke="{color}" stroke-width="2"/>
-    <ellipse cx="0" cy="0" rx="10" ry="6" fill="white" stroke="{color}" stroke-width="1.8"/>
-    <text x="14" y="4" font-family="Rajdhani,sans-serif" font-size="8" fill="#555">{label}</text>
+    <ellipse cx="0" cy="0" rx="10" ry="7" fill="white" stroke="{color}" stroke-width="1.8"/>
+    <text x="13" y="4" font-size="8" fill="#888">{label}</text>
   </g>"""
 
 
-def sym_bus_pt(x, y, label="PT", color="#333333"):
-    """Bus PT / VT — wound symbol."""
-    return f"""
-  <g class="sym-pt" transform="translate({x},{y})">
-    <line x1="0" y1="-20" x2="0" y2="-10" stroke="{color}" stroke-width="2"/>
-    <circle cx="0" cy="-4" r="7" fill="white" stroke="{color}" stroke-width="1.8"/>
-    <circle cx="0" cy="4" r="7" fill="white" stroke="{color}" stroke-width="1.8"/>
-    <line x1="0" y1="11" x2="0" y2="20" stroke="{color}" stroke-width="2"/>
-    <line x1="0" y1="20" x2="0" y2="26" stroke="#006600" stroke-width="1.8"/>
-    <line x1="-5" y1="26" x2="5" y2="26" stroke="#006600" stroke-width="1.8"/>
-    <line x1="-3" y1="29" x2="3" y2="29" stroke="#006600" stroke-width="1.3"/>
-    <text x="12" y="4" font-family="Rajdhani,sans-serif" font-size="8" fill="#555">{label}</text>
+def sym_bus_pt(x, y, label="Bus PT", color="#555"):
+    return f"""<g class="sym-pt" transform="translate({x},{y})">
+    <line x1="0" y1="-8" x2="0" y2="-2" stroke="{color}" stroke-width="2"/>
+    <circle cx="0" cy="5" r="7" fill="white" stroke="{color}" stroke-width="1.8"/>
+    <circle cx="0" cy="16" r="7" fill="white" stroke="{color}" stroke-width="1.8"/>
+    <line x1="0" y1="23" x2="0" y2="30" stroke="#006600" stroke-width="1.8"/>
+    <line x1="-6" y1="30" x2="6" y2="30" stroke="#006600" stroke-width="1.8"/>
+    <line x1="-4" y1="34" x2="4" y2="34" stroke="#006600" stroke-width="1.4"/>
+    <line x1="-2" y1="38" x2="2" y2="38" stroke="#006600" stroke-width="1"/>
+    <text x="10" y="12" font-size="8" fill="#888">{label}</text>
   </g>"""
 
 
-def sym_transformer(x, y, label="10MVA\n33/11kV", color_hv="#CC2200", color_lv="#0055CC"):
-    """IEC 60617: Power transformer — two interlocked circles."""
-    lines = label.split("\\n")
+def sym_transformer(x, y, label="2.5MVA\n33/11kV"):
+    lines = label.split("\n")
     text_els = "".join(
-        f'<tspan x="{x + 50}" dy="{14 if i else 0}" font-size="10">{ln}</tspan>'
+        f'<tspan x="38" dy="{0 if i==0 else 14}" font-size="10">{ln}</tspan>'
         for i, ln in enumerate(lines)
     )
-    return f"""
-  <g class="sym-tr" transform="translate({x},{y})">
-    <line x1="0" y1="-30" x2="0" y2="-18" stroke="{color_hv}" stroke-width="2.5"/>
-    <circle cx="0" cy="-6" r="13" fill="white" stroke="{color_hv}" stroke-width="2.2"/>
-    <circle cx="0" cy="8" r="13" fill="white" stroke="{color_lv}" stroke-width="2.2"/>
-    <line x1="0" y1="21" x2="0" y2="30" stroke="{color_lv}" stroke-width="2.5"/>
-    <line x1="-6" y1="36" x2="6" y2="36" stroke="#006600" stroke-width="2"/>
-    <line x1="-4" y1="39" x2="4" y2="39" stroke="#006600" stroke-width="1.5"/>
-    <line x1="-2" y1="42" x2="2" y2="42" stroke="#006600" stroke-width="1"/>
-    <line x1="0" y1="30" x2="0" y2="36" stroke="#006600" stroke-width="2"/>
-    <text font-family="Rajdhani,sans-serif" font-weight="600" fill="#333333">
-      {text_els}
-    </text>
+    return f"""<g class="sym-tr" transform="translate({x},{y})">
+    <line x1="0" y1="-38" x2="0" y2="-20" stroke="#CC2200" stroke-width="2.5"/>
+    <circle cx="0" cy="-8" r="13" fill="white" stroke="#CC2200" stroke-width="2.2"/>
+    <circle cx="0" cy="8" r="13" fill="white" stroke="#0055CC" stroke-width="2.2"/>
+    <line x1="0" y1="21" x2="0" y2="38" stroke="#0055CC" stroke-width="2.5"/>
+    <line x1="0" y1="38" x2="0" y2="44" stroke="#006600" stroke-width="2"/>
+    <line x1="-7" y1="44" x2="7" y2="44" stroke="#006600" stroke-width="2"/>
+    <line x1="-5" y1="48" x2="5" y2="48" stroke="#006600" stroke-width="1.5"/>
+    <line x1="-2.5" y1="52" x2="2.5" y2="52" stroke="#006600" stroke-width="1"/>
+    <text font-weight="600" fill="#333" y="-6">{text_els}</text>
   </g>"""
 
 
-def sym_earth(x, y, color="#006600"):
-    return f"""
-  <g class="sym-earth" transform="translate({x},{y})">
-    <line x1="0" y1="-8" x2="0" y2="0" stroke="{color}" stroke-width="2"/>
-    <line x1="-8" y1="0" x2="8" y2="0" stroke="{color}" stroke-width="2"/>
-    <line x1="-5" y1="4" x2="5" y2="4" stroke="{color}" stroke-width="1.5"/>
-    <line x1="-2" y1="8" x2="2" y2="8" stroke="{color}" stroke-width="1"/>
+def sym_busbar(x1, y, x2, label="", color="#111111", voltage=33):
+    c = "#CC2200" if voltage == 33 else "#0055CC"
+    lbl = f'<text x="{x1}" y="{y-8}" font-size="10" font-weight="700" fill="{c}" letter-spacing="0.5">{label}</text>' if label else ""
+    return f"""<g class="sym-bus">{lbl}
+    <line x1="{x1}" y1="{y}" x2="{x2}" y2="{y}" stroke="{color}" stroke-width="6" stroke-linecap="round"/>
   </g>"""
 
 
-def sym_feeder_arrow(x, y, name, voltage_kv=11):
-    """Outgoing feeder terminal with arrow and label."""
+def sym_feeder_out(x, y, name, voltage_kv=11, is_ar=False):
     color = "#0055CC" if voltage_kv == 11 else "#CC2200"
-    return f"""
-  <g class="sym-feeder-out" transform="translate({x},{y})">
-    <line x1="0" y1="0" x2="0" y2="30" stroke="{color}" stroke-width="2"/>
-    <polygon points="0,38 -6,26 6,26" fill="{color}"/>
-    <text x="10" y="20" font-family="Rajdhani,sans-serif" font-size="10"
-          fill="{color}" font-weight="600">{name}</text>
+    ar_badge = (f'<rect x="-12" y="18" width="24" height="12" fill="{color}" rx="3"/>'
+                f'<text x="0" y="28" text-anchor="middle" font-size="8" fill="white" font-weight="700">AR</text>') if is_ar else ""
+    return f"""<g class="sym-feeder" transform="translate({x},{y})">
+    <line x1="0" y1="0" x2="0" y2="32" stroke="{color}" stroke-width="2"/>
+    <polygon points="0,40 -7,28 7,28" fill="{color}"/>
+    {ar_badge}
+    <text x="0" y="60" text-anchor="middle" font-size="9" fill="{color}" font-weight="600"
+          transform="rotate(-35,0,55)">{name[:20]}</text>
   </g>"""
 
 
-def sym_busbar(x1, y, x2, label="", color="#111111"):
-    """Horizontal busbar."""
-    lbl = f'<text x="{x1}" y="{y - 6}" font-family="Rajdhani,sans-serif" font-size="9" fill="#555">{label}</text>' if label else ""
-    return f"""
-  <g class="sym-bus">
-    {lbl}
-    <line x1="{x1}" y1="{y}" x2="{x2}" y2="{y}" stroke="{color}" stroke-width="5" stroke-linecap="round"/>
+def sym_bus_coupler_vertical(x, y_bus1, y_bus2, color="#333333"):
+    """
+    Vertical bus coupler: Bus1 → Iso(ES) → VCB → Iso(ES) → Bus2
+    Matches MES Likabali layout exactly.
+    """
+    gap    = y_bus2 - y_bus1
+    iso1_y = y_bus1 + gap * 0.25
+    vcb_y  = y_bus1 + gap * 0.5
+    iso2_y = y_bus1 + gap * 0.75
+
+    return f"""<g class="sym-bc" transform="translate({x},0)">
+    <text x="22" y="{int(vcb_y)}" font-size="9" fill="{color}" font-weight="700">BUS COUPLER</text>
+    <!-- Bus1 to Iso1 -->
+    <line x1="0" y1="{y_bus1}" x2="0" y2="{int(iso1_y)-18}" stroke="{color}" stroke-width="2"/>
+    <!-- Isolator 1 with ES -->
+    <g transform="translate(0,{int(iso1_y)})">
+      <line x1="0" y1="-18" x2="0" y2="-6" stroke="{color}" stroke-width="2"/>
+      <circle cx="0" cy="-6" r="2.5" fill="{color}"/>
+      <line x1="0" y1="-6" x2="12" y2="6" stroke="{color}" stroke-width="1.8"/>
+      <circle cx="12" cy="6" r="2.5" fill="none" stroke="{color}" stroke-width="1.5"/>
+      <line x1="12" y1="6" x2="12" y2="18" stroke="{color}" stroke-width="2"/>
+      <line x1="12" y1="10" x2="22" y2="10" stroke="#006600" stroke-width="1.8"/>
+      <line x1="22" y1="6" x2="22" y2="18" stroke="#006600" stroke-width="1.8"/>
+      <line x1="18" y1="22" x2="26" y2="22" stroke="#006600" stroke-width="1.3"/>
+      <line x1="20" y1="26" x2="24" y2="26" stroke="#006600" stroke-width="1"/>
+    </g>
+    <!-- Iso1 to VCB -->
+    <line x1="6" y1="{int(iso1_y)+18}" x2="6" y2="{int(vcb_y)-10}" stroke="{color}" stroke-width="2"/>
+    <!-- VCB -->
+    <g transform="translate(6,{int(vcb_y)})">
+      <rect x="-10" y="-10" width="20" height="20" fill="white" stroke="{color}" stroke-width="2" rx="1"/>
+      <line x1="-8" y1="-8" x2="8" y2="8" stroke="{color}" stroke-width="1.5"/>
+      <line x1="8" y1="-8" x2="-8" y2="8" stroke="{color}" stroke-width="1.5"/>
+      <text x="-8" y="16" font-size="8" fill="{color}" font-weight="600">BC VCB</text>
+    </g>
+    <!-- VCB to Iso2 -->
+    <line x1="6" y1="{int(vcb_y)+10}" x2="6" y2="{int(iso2_y)-18}" stroke="{color}" stroke-width="2"/>
+    <!-- Isolator 2 with ES -->
+    <g transform="translate(6,{int(iso2_y)})">
+      <line x1="0" y1="-18" x2="0" y2="-6" stroke="{color}" stroke-width="2"/>
+      <circle cx="0" cy="-6" r="2.5" fill="{color}"/>
+      <line x1="0" y1="-6" x2="12" y2="6" stroke="{color}" stroke-width="1.8"/>
+      <circle cx="12" cy="6" r="2.5" fill="none" stroke="{color}" stroke-width="1.5"/>
+      <line x1="12" y1="6" x2="12" y2="18" stroke="{color}" stroke-width="2"/>
+      <line x1="12" y1="10" x2="22" y2="10" stroke="#006600" stroke-width="1.8"/>
+      <line x1="22" y1="6" x2="22" y2="18" stroke="#006600" stroke-width="1.8"/>
+      <line x1="18" y1="22" x2="26" y2="22" stroke="#006600" stroke-width="1.3"/>
+      <line x1="20" y1="26" x2="24" y2="26" stroke="#006600" stroke-width="1"/>
+    </g>
+    <!-- Iso2 to Bus2 -->
+    <line x1="18" y1="{int(iso2_y)+18}" x2="18" y2="{y_bus2}" stroke="{color}" stroke-width="2"/>
   </g>"""
 
-
-def sym_bus_coupler(x, y, color="#333333"):
-    """Bus coupler VCB between two buses."""
-    return f"""
-  <g class="sym-bc" transform="translate({x},{y})">
-    <line x1="0" y1="-15" x2="0" y2="-8" stroke="{color}" stroke-width="2"/>
-    <rect x="-8" y="-8" width="16" height="16" fill="white" stroke="{color}" stroke-width="2"/>
-    <line x1="-6" y1="-6" x2="6" y2="6" stroke="{color}" stroke-width="1.5"/>
-    <line x1="6" y1="-6" x2="-6" y2="6" stroke="{color}" stroke-width="1.5"/>
-    <line x1="0" y1="8" x2="0" y2="15" stroke="{color}" stroke-width="2"/>
-    <text x="12" y="4" font-family="Rajdhani,sans-serif" font-size="8" fill="#555">BC</text>
-  </g>"""
-
-
-# ── SLD Layout Engine ─────────────────────────────────────────────────────────
 
 class SLDGenerator:
     def __init__(self, db):
         self.db = db
 
     def generate(self, substation_id: str) -> str:
-        """Return complete SVG string for the given substation."""
         ss = self.db.substations.find_one({"_id": ObjectId(substation_id)})
         if not ss:
             return self._error_svg("Substation not found")
-
-        feeders = list(
-            self.db.feeders.find({"substation_id": ObjectId(substation_id)}).sort("sequence", 1)
-        )
-        transformers = list(
-            self.db.transformers.find({"substation_id": ObjectId(substation_id)}).sort("sequence", 1)
-        )
-
+        feeders = list(self.db.feeders.find(
+            {"substation_id": ObjectId(substation_id)}).sort("sequence", 1))
+        transformers = list(self.db.transformers.find(
+            {"substation_id": ObjectId(substation_id)}).sort("sequence", 1))
         topo = ss.get("topology", {})
         bus_config = topo.get("bus_config", "single_bus")
-
         if bus_config in ("double_bus_coupler", "double_bus"):
             return self._render_double_bus(ss, feeders, transformers, topo)
-        else:
-            return self._render_single_bus(ss, feeders, transformers, topo)
-
-    # ── Single Bus Layout ─────────────────────────────────────────────────────
+        return self._render_single_bus(ss, feeders, transformers, topo)
 
     def _render_single_bus(self, ss, feeders, transformers, topo):
         outgoing = [f for f in feeders if f["feeder_type"] == "outgoing_11kv"]
-        incoming_33 = [f for f in feeders if f["feeder_type"] == "incoming_33kv"]
-        num_out = max(len(outgoing), 1)
-        num_tr = max(len(transformers), 1)
+        incoming = [f for f in feeders if f["feeder_type"] == "incoming_33kv"]
+        num_out  = max(len(outgoing), 2)
+        num_tr   = max(len(transformers), 1)
+        margin   = 80
+        col_w    = 110
+        total_w  = max(860, num_out * col_w + margin * 2)
+        cx       = total_w // 2
 
-        col_w = 120
-        total_w = max(800, (num_out + num_tr + 1) * col_w + 100)
-        total_h = 700
-        cx = total_w // 2
+        Y = dict(
+            top=60, la=95, iso1=134, vcb33=178, ct33=218,
+            bus33=254, iso_tr=290, tr=350, vcb11=430,
+            ct11=460, bus11=496, iso_out=532, vcb_out=574,
+            ct_out=614, feeder=644,
+        )
+        total_h = Y["feeder"] + 100 + 200 + len(feeders) * 14
+        p = [self._svg_header(ss, total_w, total_h)]
 
-        svg_parts = [self._svg_header(ss, total_w, total_h)]
+        inc_name = incoming[0]["name"] if incoming else "33 kV INCOMER"
+        p.append(f'<text x="{cx}" y="{Y["top"]-12}" text-anchor="middle" class="lbl33">{inc_name}</text>')
+        p.append(sym_line(cx, Y["top"], cx, Y["la"]-22))
+        p.append(sym_lightning_arrester(cx-44, Y["la"]))
+        p.append(f'<line x1="{cx-44}" y1="{Y["la"]-22}" x2="{cx}" y2="{Y["la"]-22}" stroke="#CC2200" stroke-width="1.5" stroke-dasharray="4,2"/>')
+        p.append(sym_line(cx, Y["la"]-22, cx, Y["iso1"]-18))
+        p.append(sym_isolator(cx, Y["iso1"], has_earth=True, label="800A,10kA"))
+        p.append(sym_line(cx+12, Y["iso1"]+18, cx, Y["vcb33"]-22))
+        p.append(sym_vcb(cx, Y["vcb33"], label="33kV VCB"))
+        p.append(sym_line(cx, Y["vcb33"]+22, cx, Y["ct33"]-20))
+        p.append(sym_ct(cx, Y["ct33"], label="33kV CT"))
+        p.append(sym_bus_pt(cx+55, Y["bus33"]-40, label="33kV Bus PT"))
+        p.append(f'<line x1="{cx}" y1="{Y["bus33"]}" x2="{cx+55}" y2="{Y["bus33"]}" stroke="#888" stroke-width="1.2" stroke-dasharray="3,2"/>')
+        p.append(sym_line(cx, Y["ct33"]+20, cx, Y["bus33"]))
+        p.append(sym_busbar(margin, Y["bus33"], total_w-margin, "33 kV BUS", "#111111", 33))
 
-        # 33kV Incoming section (top)
-        svg_parts.append(f'<text x="{cx}" y="28" text-anchor="middle" class="section-label-33">33 kV INCOMING</text>')
-        in_feeder = incoming_33[0] if incoming_33 else None
-        in_name = in_feeder["name"] if in_feeder else "33 kV INCOMER"
-        svg_parts.append(f'<text x="{cx}" y="52" text-anchor="middle" class="feeder-label-33">{in_name}</text>')
-
-        # Incoming cable
-        svg_parts.append(f'<line x1="{cx}" y1="55" x2="{cx}" y2="80" stroke="#CC2200" stroke-width="2.5"/>')
-        # LA
-        svg_parts.append(sym_lightning_arrester(cx - 40, 95))
-        svg_parts.append(f'<line x1="{cx}" y1="80" x2="{cx}" y2="95" stroke="#CC2200" stroke-width="2.5"/>')
-        # 33kV Isolator with ES
-        svg_parts.append(sym_isolator(cx, 115, has_earth=True))
-        # 33kV VCB
-        svg_parts.append(sym_vcb(cx, 165, label="33kV VCB"))
-        # CT
-        svg_parts.append(sym_ct(cx, 210, label="33kV CT"))
-        # Bus PT tap
-        svg_parts.append(sym_bus_pt(cx + 40, 230, label="Bus PT"))
-
-        # 33kV Bus
-        bus_y = 250
-        svg_parts.append(sym_busbar(50, bus_y, total_w - 50, label="33 kV BUS"))
-        svg_parts.append(f'<line x1="{cx}" y1="230" x2="{cx}" y2="{bus_y}" stroke="#CC2200" stroke-width="2.5"/>')
-
-        # Transformers
-        tr_spacing = col_w
-        tr_start_x = cx - ((num_tr - 1) * tr_spacing) // 2
-        tr_positions = []
-
+        tr_spacing = max(160, (total_w - margin*2) // max(num_tr, 1))
+        tr_start   = cx - ((num_tr-1)*tr_spacing)//2
         for i, tr in enumerate(transformers):
-            tx = tr_start_x + i * tr_spacing
+            tx  = tr_start + i*tr_spacing
             cap = tr.get("capacity_mva", "?")
-            lbl = f'{cap}MVA\n33/11kV'
-            svg_parts.append(f'<line x1="{tx}" y1="{bus_y}" x2="{tx}" y2="{bus_y + 20}" stroke="#CC2200" stroke-width="2.5"/>')
-            # HV Isolator
-            svg_parts.append(sym_isolator(tx, bus_y + 35, has_earth=True))
-            # Transformer
-            svg_parts.append(sym_transformer(tx, bus_y + 75, label=lbl))
-            tr_positions.append(tx)
+            p.append(sym_line(tx, Y["bus33"], tx, Y["iso_tr"]-18, color="#CC2200"))
+            p.append(sym_isolator(tx, Y["iso_tr"], has_earth=True, color="#CC2200", label="800A,25kA"))
+            p.append(sym_line(tx+12, Y["iso_tr"]+18, tx, Y["tr"]-38, color="#CC2200"))
+            p.append(sym_transformer(tx, Y["tr"], label=f"{cap}MVA\n33/11kV"))
+            p.append(sym_line(tx, Y["tr"]+38, tx, Y["vcb11"]-22, color="#0055CC"))
+            p.append(sym_vcb(tx, Y["vcb11"], label="11kV VCB", color="#0055CC"))
+            p.append(sym_line(tx, Y["vcb11"]+22, tx, Y["ct11"]-20, color="#0055CC"))
+            p.append(sym_ct(tx, Y["ct11"], label="11kV CT", color="#555"))
+            p.append(sym_line(tx, Y["ct11"]+20, tx, Y["bus11"], color="#0055CC"))
 
-        # 11kV Bus
-        bus_11_y = bus_y + 180
-        svg_parts.append(sym_busbar(50, bus_11_y, total_w - 50, label="11 kV BUS", color="#0055CC"))
+        p.append(sym_busbar(margin, Y["bus11"], total_w-margin, "11 kV BUS", "#0055CC", 11))
+        p.append(sym_bus_pt(margin-10, Y["bus11"]-40, label="11kV Bus PT"))
+        p.append(f'<line x1="{margin-10}" y1="{Y["bus11"]}" x2="{margin}" y2="{Y["bus11"]}" stroke="#888" stroke-width="1.2" stroke-dasharray="3,2"/>')
+        p.append(f'<text x="{cx}" y="{Y["bus11"]+18}" text-anchor="middle" class="lbl11">11 kV OUTGOING FEEDERS</text>')
 
-        # Connect transformers to 11kV bus
-        for tx in tr_positions:
-            svg_parts.append(f'<line x1="{tx}" y1="{bus_y + 145}" x2="{tx}" y2="{bus_11_y}" stroke="#0055CC" stroke-width="2.5"/>')
-            svg_parts.append(sym_vcb(tx, bus_y + 155, label="11kV VCB", color="#0055CC"))
-
-        # 11kV Bus PT
-        svg_parts.append(sym_bus_pt(50, bus_11_y - 15, label="11kV Bus PT", color="#333333"))
-
-        # Outgoing 11kV feeders
-        out_spacing = max(col_w, (total_w - 100) // max(num_out, 1))
-        out_start_x = 80 + out_spacing // 2
-        svg_parts.append(f'<text x="{cx}" y="{bus_11_y + 16}" text-anchor="middle" class="section-label-11">11 kV OUTGOING FEEDERS</text>')
-
+        sp  = max(col_w, (total_w - margin*2) // max(num_out, 1))
+        sx  = margin + sp//2
         for i, fd in enumerate(outgoing):
-            fx = out_start_x + i * out_spacing
-            svg_parts.append(f'<line x1="{fx}" y1="{bus_11_y}" x2="{fx}" y2="{bus_11_y + 20}" stroke="#0055CC" stroke-width="2"/>')
-            svg_parts.append(sym_isolator(fx, bus_11_y + 35, has_earth=True, color="#0055CC"))
-            svg_parts.append(sym_vcb(fx, bus_11_y + 70, label="VCB", color="#0055CC"))
-            svg_parts.append(sym_ct(fx, bus_11_y + 110, label="CT", color="#333333"))
-            svg_parts.append(sym_feeder_arrow(fx, bus_11_y + 140, fd["name"][:20], voltage_kv=11))
+            fx = sx + i*sp
+            ar = is_autorecloser(fd)
+            c  = "#0055CC"
+            p.append(sym_line(fx, Y["bus11"], fx, Y["iso_out"]-18, color=c))
+            p.append(sym_isolator(fx, Y["iso_out"], has_earth=True, color=c, label="800A,13kA"))
+            p.append(sym_line(fx+12, Y["iso_out"]+18, fx, Y["vcb_out"]-(26 if ar else 22), color=c))
+            p.append(sym_autorecloser(fx, Y["vcb_out"], color=c) if ar else sym_vcb(fx, Y["vcb_out"], label="VCB", color=c))
+            p.append(sym_line(fx, Y["vcb_out"]+22, fx, Y["ct_out"]-20, color=c))
+            p.append(sym_ct(fx, Y["ct_out"], color="#555"))
+            p.append(sym_line(fx, Y["ct_out"]+20, fx, Y["feeder"], color=c))
+            p.append(sym_feeder_out(fx, Y["feeder"], fd["name"], 11, ar))
 
-        svg_parts.append(self._equipment_table(ss, feeders, transformers, total_w, bus_11_y + 220))
-        svg_parts.append("</svg>")
-        return "".join(svg_parts)
-
-    # ── Double Bus with Coupler Layout ────────────────────────────────────────
+        p.append(self._equipment_table(ss, feeders, transformers, total_w, Y["feeder"]+100))
+        p.append("</svg>")
+        return "".join(p)
 
     def _render_double_bus(self, ss, feeders, transformers, topo):
-        outgoing = [f for f in feeders if f["feeder_type"] == "outgoing_11kv"]
-        incoming_33 = [f for f in feeders if f["feeder_type"] == "incoming_33kv"]
-        num_out = max(len(outgoing), 1)
-        num_tr = len(transformers)
+        outgoing   = [f for f in feeders if f["feeder_type"] == "outgoing_11kv"]
+        incoming33 = [f for f in feeders if f["feeder_type"] == "incoming_33kv"]
+        num_out    = max(len(outgoing), 2)
+        num_tr     = max(len(transformers), 2)
+        margin     = 80
+        col_w      = 110
+        total_w    = max(980, num_out * col_w + margin * 2 + 160)
+        cx         = total_w // 2
 
-        total_w = max(900, num_out * 110 + 200)
-        total_h = 820
-        cx = total_w // 2
+        Y = dict(
+            top=55, la=90, iso1=128, vcb33=172, ct33=212,
+            bus33=248, iso_tr=284, tr=344, vcb11ic=424,
+            ct11ic=454, bus11a=490, bus11b=570,
+            iso_out=618, vcb_out=660, ct_out=700, feeder=730,
+        )
+        total_h = Y["feeder"] + 110 + 200 + len(feeders)*14
+        p = [self._svg_header(ss, total_w, total_h)]
 
-        svg_parts = [self._svg_header(ss, total_w, total_h)]
+        # 33kV incomers
+        inc_xs = []
+        for i in range(min(max(len(incoming33), 2), 2)):
+            ix = cx - 100 + i*200
+            inc_xs.append(ix)
+            name = incoming33[i]["name"] if i < len(incoming33) else f"33kV Incomer {i+1}"
+            p.append(f'<text x="{ix}" y="{Y["top"]-12}" text-anchor="middle" class="lbl33" font-size="9">{name[:26]}</text>')
+            p.append(sym_line(ix, Y["top"], ix, Y["la"]-22, color="#CC2200"))
+            p.append(sym_lightning_arrester(ix-44, Y["la"]))
+            p.append(f'<line x1="{ix-44}" y1="{Y["la"]-22}" x2="{ix}" y2="{Y["la"]-22}" stroke="#CC2200" stroke-width="1.5" stroke-dasharray="4,2"/>')
+            p.append(sym_line(ix, Y["la"]-22, ix, Y["iso1"]-18, color="#CC2200"))
+            p.append(sym_isolator(ix, Y["iso1"], has_earth=True, color="#CC2200", label="800A,10kA"))
+            p.append(sym_line(ix+12, Y["iso1"]+18, ix, Y["vcb33"]-22, color="#CC2200"))
+            p.append(sym_vcb(ix, Y["vcb33"], label="33kV VCB", color="#CC2200"))
+            p.append(sym_line(ix, Y["vcb33"]+22, ix, Y["ct33"]-20, color="#CC2200"))
+            p.append(sym_ct(ix, Y["ct33"], label="33kV CT", color="#555"))
+            p.append(sym_line(ix, Y["ct33"]+20, ix, Y["bus33"], color="#CC2200"))
 
-        # 33kV incoming
-        for i, inc in enumerate(incoming_33[:2]):
-            ix = cx - 80 + i * 160
-            svg_parts.append(f'<text x="{ix}" y="28" text-anchor="middle" class="feeder-label-33">{inc["name"][:22]}</text>')
-            svg_parts.append(f'<line x1="{ix}" y1="32" x2="{ix}" y2="55" stroke="#CC2200" stroke-width="2.5"/>')
-            svg_parts.append(sym_lightning_arrester(ix - 35, 70))
-            svg_parts.append(sym_isolator(ix, 90, has_earth=True))
-            svg_parts.append(sym_vcb(ix, 140, label="VCB"))
-            svg_parts.append(sym_ct(ix, 185))
+        p.append(sym_bus_pt(total_w-margin-10, Y["bus33"]-40, label="33kV Bus PT"))
+        p.append(f'<line x1="{total_w-margin-10}" y1="{Y["bus33"]}" x2="{total_w-margin}" y2="{Y["bus33"]}" stroke="#888" stroke-width="1.2" stroke-dasharray="3,2"/>')
+        p.append(sym_busbar(margin, Y["bus33"], total_w-margin, "33 kV BUS", "#111111", 33))
 
-        # 33kV Bus
-        bus_y = 210
-        svg_parts.append(sym_busbar(50, bus_y, total_w - 50, label="33 kV BUS"))
-        for i in range(min(2, len(incoming_33))):
-            ix = cx - 80 + i * 160
-            svg_parts.append(f'<line x1="{ix}" y1="205" x2="{ix}" y2="{bus_y}" stroke="#CC2200" stroke-width="2.5"/>')
-
-        # Two transformers
-        tr_x = [cx - 100, cx + 100]
-        for i, tr in enumerate(transformers[:2]):
-            tx = tr_x[i]
+        # Transformers
+        tr_sp  = max(160, (total_w - margin*2) // max(num_tr, 2))
+        tr_start = margin + tr_sp//2
+        for i, tr in enumerate(transformers):
+            tx  = tr_start + i*tr_sp
             cap = tr.get("capacity_mva", "?")
-            svg_parts.append(f'<line x1="{tx}" y1="{bus_y}" x2="{tx}" y2="{bus_y + 18}" stroke="#CC2200" stroke-width="2.5"/>')
-            svg_parts.append(sym_isolator(tx, bus_y + 32, has_earth=True))
-            svg_parts.append(sym_transformer(tx, bus_y + 72, label=f"{cap}MVA\n33/11kV"))
+            p.append(sym_line(tx, Y["bus33"], tx, Y["iso_tr"]-18, color="#CC2200"))
+            p.append(sym_isolator(tx, Y["iso_tr"], has_earth=False, color="#CC2200", label="800A,25kA"))
+            p.append(sym_line(tx+12, Y["iso_tr"]+18, tx, Y["tr"]-38, color="#CC2200"))
+            p.append(sym_transformer(tx, Y["tr"], label=f"{cap}MVA\n33/11kV"))
+            p.append(sym_line(tx, Y["tr"]+38, tx, Y["vcb11ic"]-22, color="#0055CC"))
+            p.append(sym_vcb(tx, Y["vcb11ic"], label=f"11kV Incomer {i+1}", color="#0055CC"))
+            p.append(sym_line(tx, Y["vcb11ic"]+22, tx, Y["ct11ic"]-20, color="#0055CC"))
+            p.append(sym_ct(tx, Y["ct11ic"], label="11kV CT", color="#555"))
+            bus_y = Y["bus11a"] if i == 0 else Y["bus11b"]
+            p.append(sym_line(tx, Y["ct11ic"]+20, tx, bus_y, color="#0055CC"))
 
-        # 11kV Double Bus
-        bus11a_y = bus_y + 180
-        bus11b_y = bus_y + 205
-        svg_parts.append(sym_busbar(50, bus11a_y, cx - 10, label="11kV BUS-1", color="#0055CC"))
-        svg_parts.append(sym_busbar(cx + 10, bus11b_y, total_w - 50, label="11kV BUS-2", color="#0055CC"))
-        # Bus coupler
-        svg_parts.append(sym_bus_coupler(cx, (bus11a_y + bus11b_y) // 2))
+        # 11kV Bus 1 (left half) and Bus 2 (right half)
+        p.append(sym_busbar(margin, Y["bus11a"], cx-30, "11 kV BUS - 1", "#0055CC", 11))
+        p.append(sym_busbar(cx+30, Y["bus11b"], total_w-margin, "11 kV BUS - 2", "#0055CC", 11))
 
-        for i, tr in enumerate(transformers[:2]):
-            tx = tr_x[i]
-            svg_parts.append(f'<line x1="{tx}" y1="{bus_y + 145}" x2="{tx}" y2="{bus11a_y if i == 0 else bus11b_y}" stroke="#0055CC" stroke-width="2.5"/>')
-            svg_parts.append(sym_vcb(tx, bus_y + 160, label="11kV VCB", color="#0055CC"))
+        # Bus PT on Bus 1
+        p.append(sym_bus_pt(margin-10, Y["bus11a"]-40, label="11kV Bus PT"))
+        p.append(f'<line x1="{margin-10}" y1="{Y["bus11a"]}" x2="{margin}" y2="{Y["bus11a"]}" stroke="#888" stroke-width="1.2" stroke-dasharray="3,2"/>')
 
-        # Outgoing feeders
-        out_bus_y = bus11b_y + 10
-        out_spacing = max(100, (total_w - 100) // max(num_out, 1))
-        out_start = 60 + out_spacing // 2
+        # Bus Coupler at centre — Iso(ES) → VCB → Iso(ES) vertical
+        p.append(sym_bus_coupler_vertical(cx, Y["bus11a"], Y["bus11b"]))
 
-        svg_parts.append(f'<text x="{cx}" y="{out_bus_y + 18}" text-anchor="middle" class="section-label-11">11 kV OUTGOING FEEDERS</text>')
-        for i, fd in enumerate(outgoing):
-            fx = out_start + i * out_spacing
-            bus_ref_y = bus11a_y if i < num_out // 2 else bus11b_y
-            svg_parts.append(f'<line x1="{fx}" y1="{bus_ref_y}" x2="{fx}" y2="{out_bus_y + 25}" stroke="#0055CC" stroke-width="2"/>')
-            svg_parts.append(sym_isolator(fx, out_bus_y + 40, has_earth=True, color="#0055CC"))
-            svg_parts.append(sym_vcb(fx, out_bus_y + 76, label="VCB", color="#0055CC"))
-            svg_parts.append(sym_ct(fx, out_bus_y + 115, color="#333"))
-            svg_parts.append(sym_feeder_arrow(fx, out_bus_y + 145, fd["name"][:18]))
+        # Outgoing feeders split between the two buses
+        half = len(outgoing)//2 + len(outgoing)%2
+        bus1_fds = outgoing[:half]
+        bus2_fds = outgoing[half:]
 
-        svg_parts.append(self._equipment_table(ss, feeders, transformers, total_w, out_bus_y + 225))
-        svg_parts.append("</svg>")
-        return "".join(svg_parts)
+        p.append(f'<text x="{cx}" y="{Y["bus11b"]+18}" text-anchor="middle" class="lbl11">11 kV OUTGOING FEEDERS</text>')
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+        def draw_out(flist, bus_y, x0, sp2):
+            for i, fd in enumerate(flist):
+                fx = x0 + i*sp2
+                ar = is_autorecloser(fd)
+                c  = "#0055CC"
+                p.append(sym_line(fx, bus_y, fx, Y["iso_out"]-18, color=c))
+                p.append(sym_isolator(fx, Y["iso_out"], has_earth=True, color=c, label="800A,13kA"))
+                p.append(sym_line(fx+12, Y["iso_out"]+18, fx, Y["vcb_out"]-(26 if ar else 22), color=c))
+                p.append(sym_autorecloser(fx, Y["vcb_out"], color=c) if ar else sym_vcb(fx, Y["vcb_out"], label="VCB", color=c))
+                p.append(sym_line(fx, Y["vcb_out"]+22, fx, Y["ct_out"]-20, color=c))
+                p.append(sym_ct(fx, Y["ct_out"], color="#555"))
+                p.append(sym_line(fx, Y["ct_out"]+20, fx, Y["feeder"], color=c))
+                p.append(sym_feeder_out(fx, Y["feeder"], fd["name"], 11, ar))
+
+        half_w   = (cx - margin - 60)
+        out_sp1  = max(col_w, half_w // max(len(bus1_fds), 1))
+        out_sp2  = max(col_w, half_w // max(len(bus2_fds), 1))
+        draw_out(bus1_fds, Y["bus11a"], margin + out_sp1//2, out_sp1)
+        draw_out(bus2_fds, Y["bus11b"], cx + 50 + out_sp2//2, out_sp2)
+
+        p.append(self._equipment_table(ss, feeders, transformers, total_w, Y["feeder"]+110))
+        p.append("</svg>")
+        return "".join(p)
 
     def _svg_header(self, ss, w, h):
-        name = ss.get("name", "Substation")
-        gss = ss.get("gss_primary", "")
-        return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}"
-     width="{w}" height="{h}" id="sld-svg"
-     font-family="Rajdhani,sans-serif">
-  <defs>
-    <style>
-      .section-label-33 {{ font-size:12px; font-weight:700; fill:#CC2200; letter-spacing:1px; }}
-      .section-label-11 {{ font-size:12px; font-weight:700; fill:#0055CC; letter-spacing:1px; }}
-      .feeder-label-33  {{ font-size:10px; fill:#CC2200; }}
-      .feeder-label-11  {{ font-size:10px; fill:#0055CC; }}
-      .tbl-head {{ font-size:9px; font-weight:700; fill:white; }}
-      .tbl-cell {{ font-size:8px; fill:#333; }}
-    </style>
-  </defs>
-  <!-- Border -->
+        name = ss.get("name", "Substation").upper()
+        gss  = ss.get("gss_primary", "Unknown GSS")
+        topo = ss.get("topology", {})
+        bus  = (topo.get("bus_config") or "single_bus").replace("_", " ").upper()
+        return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" id="sld-svg" font-family="Rajdhani,sans-serif">
+  <defs><style>
+    .lbl33{{font-size:11px;font-weight:700;fill:#CC2200;letter-spacing:.8px}}
+    .lbl11{{font-size:11px;font-weight:700;fill:#0055CC;letter-spacing:.8px}}
+    .tbl-hd{{font-size:8px;font-weight:700;fill:white}}
+    .tbl-td{{font-size:7.5px;fill:#333}}
+  </style></defs>
   <rect x="1" y="1" width="{w-2}" height="{h-2}" fill="white" stroke="#ccc" stroke-width="1" rx="4"/>
-  <!-- Title block -->
-  <rect x="1" y="1" width="{w-2}" height="18" fill="#1a2744" rx="4"/>
-  <text x="{w//2}" y="13" text-anchor="middle"
-        font-family="Rajdhani,sans-serif" font-size="11" font-weight="700" fill="white" letter-spacing="1">
-    SINGLE LINE DIAGRAM — 33/11 kV {name.upper()} | SOURCE: {gss}
+  <rect x="1" y="1" width="{w-2}" height="22" fill="#1a2744" rx="4"/>
+  <text x="{w//2}" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="white" letter-spacing="1">
+    SLD — 33/11 kV {name} | SOURCE: {gss} | {bus}
   </text>
 """
 
     def _equipment_table(self, ss, feeders, transformers, width, y_start):
-        """Equipment summary table at bottom of SLD."""
         rows = []
         for tr in transformers:
-            rows.append((
-                f"Power Transformer {tr['sequence']}",
-                f"{tr.get('capacity_mva', '-')} MVA",
-                tr.get("make", "-"),
-                str(tr.get("yom", "-")),
-                f"Max Load: {tr.get('max_loading_mw', '-')} MW",
-            ))
+            rows.append((f"PTR-{tr.get('sequence','')} Power Transformer",
+                         f"{tr.get('capacity_mva','-')} MVA",
+                         tr.get("make","-") or "-",
+                         str(tr.get("yom","-") or "-"),
+                         f"OTI:{tr.get('max_oti_c','-')}°C WTI:{tr.get('max_wti_c','-')}°C"))
         for fd in feeders:
-            if fd["feeder_type"] not in ("outgoing_11kv", "incoming_33kv"):
+            if fd["feeder_type"] not in ("outgoing_11kv","incoming_33kv"):
                 continue
-            sg = fd.get("switchgear", {})
-            mt = fd.get("meter", {})
-            rows.append((
-                fd["name"][:25],
-                f"{fd['voltage_kv']} kV",
-                sg.get("vcb_make", "-") or "-",
-                str(sg.get("year_commissioned", "-") or "-"),
-                f"Meter: {mt.get('number', '-') or '-'} | CTR: {mt.get('ctr', '-') or '-'}",
-            ))
-
-        row_h = 14
-        tbl_h = len(rows) * row_h + 20
-        cols = [0, 180, 250, 310, 370, width - 20]
-        headers = ["Equipment", "Rating", "Make", "YOM", "Meter / Notes"]
-
-        parts = [f'<g transform="translate(20,{y_start})">']
-        parts.append(f'<rect x="0" y="0" width="{width - 40}" height="{tbl_h}" fill="#f8f9fa" stroke="#ddd" rx="3"/>')
-        parts.append(f'<rect x="0" y="0" width="{width - 40}" height="16" fill="#1a2744" rx="3"/>')
-
-        for i, h in enumerate(headers):
-            parts.append(f'<text x="{cols[i] + 4}" y="12" class="tbl-head">{h}</text>')
-
-        for r, row_data in enumerate(rows):
-            ry = 16 + r * row_h
-            bg = "#ffffff" if r % 2 == 0 else "#f0f4ff"
-            parts.append(f'<rect x="0" y="{ry}" width="{width - 40}" height="{row_h}" fill="{bg}"/>')
-            for c, cell in enumerate(row_data):
-                parts.append(f'<text x="{cols[c] + 4}" y="{ry + 10}" class="tbl-cell">{cell}</text>')
-
-        parts.append("</g>")
-        return "".join(parts)
+            sg = fd.get("switchgear",{})
+            mt = fd.get("meter",{})
+            ar = " [AR]" if is_autorecloser(fd) else ""
+            rows.append((fd["name"][:30]+ar,
+                         f"{fd['voltage_kv']} kV",
+                         sg.get("vcb_make","-") or "-",
+                         str(sg.get("year_commissioned","-") or "-"),
+                         f"Meter:{mt.get('number','-') or '-'} CTR:{mt.get('ctr','-') or '-'} MF:{mt.get('mf','-') or '-'}"))
+        rh   = 14
+        cols = [0, 210, 280, 340, 400, width-40]
+        hdrs = ["Equipment / Feeder", "Rating", "Make", "YOM", "Meter / Notes"]
+        tbl_h = len(rows)*rh + 20
+        p = [f'<g transform="translate(20,{y_start})">',
+             f'<rect x="0" y="0" width="{width-40}" height="{tbl_h}" fill="#f8f9fa" stroke="#ddd" rx="3"/>',
+             f'<rect x="0" y="0" width="{width-40}" height="16" fill="#1a2744" rx="3"/>']
+        for i, h in enumerate(hdrs):
+            p.append(f'<text x="{cols[i]+4}" y="12" class="tbl-hd">{h}</text>')
+        for r, row in enumerate(rows):
+            ry = 16 + r*rh
+            bg = "#fff" if r%2==0 else "#eef2ff"
+            p.append(f'<rect x="0" y="{ry}" width="{width-40}" height="{rh}" fill="{bg}"/>')
+            for c, cell in enumerate(row):
+                p.append(f'<text x="{cols[c]+4}" y="{ry+10}" class="tbl-td">{cell}</text>')
+        p.append("</g>")
+        return "".join(p)
 
     def _error_svg(self, msg):
-        return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100">
-  <text x="200" y="50" text-anchor="middle" fill="red" font-family="Rajdhani,sans-serif">{msg}</text>
-</svg>'''
+        return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 120"><rect width="500" height="120" fill="#fff1f0" rx="8"/><text x="250" y="65" text-anchor="middle" fill="#cc2200" font-family="Rajdhani,sans-serif" font-size="14" font-weight="700">{msg}</text></svg>'
