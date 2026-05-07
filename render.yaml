@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: sld-portal
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app --workers 2 --bind 0.0.0.0:$PORT --timeout 120
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: FLASK_ENV
+        value: production
+      - key: BCRYPT_LOG_ROUNDS
+        value: "12"

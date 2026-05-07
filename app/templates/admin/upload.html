@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Upload Data — GEC-II SLD Portal{% endblock %}
+{% block content %}
+<div style="margin-bottom:20px;">
+  <h1 style="font-size:1.5rem;font-weight:700;">Upload Substation Data</h1>
+  <p style="color:var(--text-sub);font-size:.88rem;margin-top:2px;">Import Excel / CSV feeder status files. Existing substation records will be overwritten.</p>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+  <div class="card">
+    <div class="card-header"><span class="dot11"></span>File Upload</div>
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="drop-icon">📂</div>
+      <div class="drop-label">Click or drag & drop your Excel/CSV file here</div>
+      <div style="font-size:.8rem;color:var(--text-sub);margin-top:8px;">Supported: .xlsx, .xls, .csv (max 20 MB)</div>
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display:none"/>
+    </div>
+    <div id="file-name" style="margin-top:12px;font-size:.88rem;color:var(--text-sub);display:none;"></div>
+    <div style="margin-top:16px;">
+      <button class="btn btn-primary" id="upload-btn" onclick="uploadFile()" style="width:100%" disabled>
+        Upload & Import
+      </button>
+    </div>
+    <div id="progress-bar-wrap" style="margin-top:12px;display:none;">
+      <div style="background:var(--surface2);border-radius:20px;overflow:hidden;height:6px;">
+        <div id="progress-bar" style="width:0%;height:100%;background:var(--accent11);transition:width .4s;border-radius:20px;"></div>
+      </div>
+      <div id="progress-text" style="font-size:.8rem;color:var(--text-sub);margin-top:4px;text-align:center">Processing…</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="dot33"></span>Import Result</div>
+    <div id="result-panel" style="min-height:120px;">
+      <p style="color:var(--text-sub);font-size:.88rem;text-align:center;padding:30px 0;">Upload a file to see results here.</p>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <div class="card-header">Expected Excel Format</div>
+  <div style="font-size:.85rem;color:var(--text-sub);line-height:1.7;">
+    <p style="margin-bottom:8px;">The system expects the <strong>GECII Feeder Status</strong> Excel format with the following column groups:</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:10px;">
+      <div style="background:var(--surface2);border-radius:7px;padding:10px 12px;border-left:3px solid var(--accent33);">
+        <div style="font-weight:700;margin-bottom:4px;">General Details</div>
+        <div style="font-size:.8rem;">SN, Region, Circle, T&C, ESD, Substation Name, GPS, Type</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:7px;padding:10px 12px;border-left:3px solid #7700cc;">
+        <div style="font-weight:700;margin-bottom:4px;">GSS Connectivity</div>
+        <div style="font-size:.8rem;">Primary GSS, Alternate GSS, Tapping info, LILO info</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:7px;padding:10px 12px;border-left:3px solid var(--accent33);">
+        <div style="font-weight:700;margin-bottom:4px;">Transformer Details</div>
+        <div style="font-size:.8rem;">Capacity (MVA), Make, YOM, Max Loading, OTI, WTI</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:7px;padding:10px 12px;border-left:3px solid var(--accent11);">
+        <div style="font-weight:700;margin-bottom:4px;">Feeder Details</div>
+        <div style="font-size:.8rem;">Feeder Name, Voltage (33kV/11kV)</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:7px;padding:10px 12px;border-left:3px solid var(--accent-g);">
+        <div style="font-weight:700;margin-bottom:4px;">Meter Details</div>
+        <div style="font-size:.8rem;">Meter No., Make, Type, Status, CTR, MF, CT type/status</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:7px;padding:10px 12px;border-left:3px solid #888;">
+        <div style="font-weight:700;margin-bottom:4px;">Switchgear & Protection</div>
+        <div style="font-size:.8rem;">VCB type/make/YOM, Relay type/make, Status, Year commissioned</div>
+      </div>
+    </div>
+    <p style="margin-top:12px;font-size:.82rem;">
+      ⚠ Data starts at <strong>row 4</strong> (rows 1–3 are merged headers). Multiple sheets are supported.
+      Re-uploading for an existing substation will <strong>overwrite</strong> all its feeder and transformer records.
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedFile = null;
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) selectFile(fileInput.files[0]);
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+});
+
+function selectFile(file) {
+  selectedFile = file;
+  const nameEl = document.getElementById('file-name');
+  nameEl.style.display = 'block';
+  nameEl.innerHTML = `📄 <strong>${file.name}</strong> (${(file.size/1024/1024).toFixed(2)} MB)`;
+  document.getElementById('upload-btn').disabled = false;
+}
+
+async function uploadFile() {
+  if (!selectedFile) return;
+  const btn = document.getElementById('upload-btn');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  document.getElementById('progress-bar-wrap').style.display = 'block';
+  simulateProgress();
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/api/v1/upload/excel', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + Auth.getAccess() },
+      body: formData,
+    });
+    const d = await res.json();
+    clearProgress();
+    if (!res.ok) {
+      showResult('error', 'Import Failed', d.error || 'Unknown error', []);
+      toast(d.error || 'Upload failed', 'error');
+    } else {
+      showResult('success', 'Import Successful', '', d.errors || [], d);
+      toast(`Imported: ${d.substations} substations, ${d.feeders} feeders`, 'success');
+    }
+  } catch(e) {
+    clearProgress();
+    showResult('error', 'Upload Error', e.message, []);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload & Import';
+  }
+}
+
+let progressInterval;
+function simulateProgress() {
+  let v = 0;
+  const bar = document.getElementById('progress-bar');
+  const txt = document.getElementById('progress-text');
+  progressInterval = setInterval(() => {
+    v = Math.min(v + Math.random() * 8, 90);
+    bar.style.width = v + '%';
+    txt.textContent = v < 30 ? 'Reading file…' : v < 60 ? 'Parsing records…' : 'Writing to database…';
+  }, 300);
+}
+function clearProgress() {
+  clearInterval(progressInterval);
+  document.getElementById('progress-bar').style.width = '100%';
+  document.getElementById('progress-text').textContent = 'Done';
+  setTimeout(() => { document.getElementById('progress-bar-wrap').style.display = 'none'; }, 1000);
+}
+
+function showResult(type, title, msg, errors, summary) {
+  const panel = document.getElementById('result-panel');
+  const color = type === 'success' ? 'var(--accent-g)' : 'var(--accent33)';
+  const icon  = type === 'success' ? '✅' : '❌';
+  let html = `
+    <div style="text-align:center;padding:20px 0;">
+      <div style="font-size:2rem;margin-bottom:8px">${icon}</div>
+      <div style="font-size:1.1rem;font-weight:700;color:${color};margin-bottom:4px">${title}</div>
+      ${msg ? `<div style="font-size:.85rem;color:var(--accent33);margin-bottom:12px">${msg}</div>` : ''}
+    </div>`;
+  if (summary) {
+    html += `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:var(--surface2);border-radius:7px;padding:10px;text-align:center;">
+          <div style="font-size:1.5rem;font-weight:700;color:var(--accent33)">${summary.substations||0}</div>
+          <div style="font-size:.78rem;color:var(--text-sub)">SUBSTATIONS</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:7px;padding:10px;text-align:center;">
+          <div style="font-size:1.5rem;font-weight:700;color:#7700cc">${summary.transformers||0}</div>
+          <div style="font-size:.78rem;color:var(--text-sub)">TRANSFORMERS</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:7px;padding:10px;text-align:center;">
+          <div style="font-size:1.5rem;font-weight:700;color:var(--accent11)">${summary.feeders||0}</div>
+          <div style="font-size:.78rem;color:var(--text-sub)">FEEDERS</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:7px;padding:10px;text-align:center;">
+          <div style="font-size:1.5rem;font-weight:700;color:var(--accent33)">${(errors||[]).length}</div>
+          <div style="font-size:.78rem;color:var(--text-sub)">WARNINGS</div>
+        </div>
+      </div>`;
+  }
+  if (errors && errors.length) {
+    html += `<div style="font-size:.8rem;color:var(--accent33);background:rgba(204,34,0,.06);border-radius:7px;padding:10px;max-height:120px;overflow-y:auto;">
+      ${errors.map(e => `<div>⚠ ${e}</div>`).join('')}
+    </div>`;
+  }
+  panel.innerHTML = html;
+}
+
+const user = Auth.getUser();
+if (!Auth.isLoggedIn() || !['admin','engineer'].includes(user?.role)) {
+  window.location.href = '/dashboard';
+}
+</script>
+{% endblock %}

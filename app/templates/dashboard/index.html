@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — GEC-II SLD Portal{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+  <div>
+    <h1 style="font-size:1.6rem; font-weight:700; letter-spacing:.3px;">Network Dashboard</h1>
+    <p style="color:var(--text-sub); font-size:.9rem; margin-top:2px;">33/11 kV Substation Overview — GEC-II Circle</p>
+  </div>
+  <div style="display:flex; gap:10px;">
+    <button class="btn btn-ghost btn-sm" onclick="loadAll()">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stat-grid" id="stat-grid">
+  <div class="stat-card" style="--accent-color:#1a2744">
+    <div class="stat-label">Substations</div>
+    <div class="stat-value" id="stat-ss">—</div>
+    <div class="stat-unit">33/11 kV stations</div>
+  </div>
+  <div class="stat-card" style="--accent-color:var(--accent33)">
+    <div class="stat-label">33 kV Incomers</div>
+    <div class="stat-value" id="stat-33">—</div>
+    <div class="stat-unit">incoming feeders</div>
+  </div>
+  <div class="stat-card" style="--accent-color:var(--accent11)">
+    <div class="stat-label">11 kV Feeders</div>
+    <div class="stat-value" id="stat-11">—</div>
+    <div class="stat-unit">outgoing feeders</div>
+  </div>
+  <div class="stat-card" style="--accent-color:#7700cc">
+    <div class="stat-label">Transformers</div>
+    <div class="stat-value" id="stat-tr">—</div>
+    <div class="stat-unit">power transformers</div>
+  </div>
+  <div class="stat-card" style="--accent-color:var(--accent-g)">
+    <div class="stat-label">Total Capacity</div>
+    <div class="stat-value" id="stat-cap">—</div>
+    <div class="stat-unit">MVA installed</div>
+  </div>
+</div>
+
+<!-- Main grid -->
+<div style="display:grid; grid-template-columns:1fr 340px; gap:20px; align-items:start;">
+
+  <!-- Left: Map + GSS breakdown -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <!-- Map -->
+    <div class="card">
+      <div class="card-header"><span class="dot11"></span>Substation Locations</div>
+      <div id="map"></div>
+      <div style="display:flex; gap:16px; margin-top:10px; font-size:.8rem; color:var(--text-sub);">
+        <span>🔴 33 kV Conventional</span>
+        <span>🔵 Compact</span>
+        <span style="cursor:pointer; color:var(--accent11)" onclick="document.getElementById('map').scrollIntoView({behavior:'smooth'})">Click marker to view SLD</span>
+      </div>
+    </div>
+
+    <!-- GSS Breakdown table -->
+    <div class="card">
+      <div class="card-header"><span class="dot33"></span>Grid Substation Connectivity</div>
+      <div class="table-wrap">
+        <table id="gss-table">
+          <thead><tr>
+            <th>Grid Substation (132/33 kV)</th>
+            <th>Substations Connected</th>
+            <th>Action</th>
+          </tr></thead>
+          <tbody id="gss-tbody">
+            <tr><td colspan="3"><div class="loading-overlay"><div class="spinner"></div> Loading…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right: Hierarchy Tree -->
+  <div class="card" style="position:sticky; top:70px; max-height:calc(100vh - 90px); overflow-y:auto;">
+    <div class="card-header"><span class="dot11"></span>Network Hierarchy</div>
+    <div style="margin-bottom:12px;">
+      <input type="search" id="tree-search" placeholder="Search substations…" style="width:100%; padding:8px 10px; font-size:.85rem;"/>
+    </div>
+    <div class="tree" id="hierarchy-tree">
+      <div class="loading-overlay"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let mapInstance = null;
+let allMarkers = [];
+
+function initMap() {
+  mapInstance = L.map('map').setView([26.1, 91.7], 9);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 18,
+  }).addTo(mapInstance);
+}
+
+function addMarkers(substations) {
+  allMarkers.forEach(m => m.remove());
+  allMarkers = [];
+  substations.forEach(ss => {
+    const gps = ss.gps || {};
+    if (!gps.lat || !gps.lon) return;
+    const color = ss.type === 'Compact' ? '#0055cc' : '#cc2200';
+    const icon = L.divIcon({
+      html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>`,
+      iconSize: [14, 14], iconAnchor: [7, 7],
+    });
+    const topo = ss.topology || {};
+    const marker = L.marker([gps.lat, gps.lon], { icon })
+      .bindPopup(`
+        <b style="font-family:Rajdhani,sans-serif;font-size:13px">${ss.name}</b><br/>
+        <span style="font-size:11px;color:#555">GSS: ${ss.gss_primary || 'Unknown'}</span><br/>
+        <span style="font-size:11px;color:#555">
+          ${topo.num_transformers || 0} TR | ${topo.outgoing_11kv_count || 0} feeders
+        </span><br/>
+        <a href="/sld/${ss._id}" style="font-size:12px;color:#0055cc;font-weight:600;">View SLD →</a>
+      `);
+    marker.addTo(mapInstance);
+    allMarkers.push(marker);
+  });
+}
+
+async function loadStats() {
+  const res = await apiFetch('/api/v1/dashboard/stats');
+  if (!res || !res.ok) return;
+  const d = await res.json();
+  document.getElementById('stat-ss').textContent  = d.total_substations;
+  document.getElementById('stat-33').textContent  = d.total_33kv_incoming;
+  document.getElementById('stat-11').textContent  = d.total_11kv_outgoing;
+  document.getElementById('stat-tr').textContent  = d.total_transformers;
+  document.getElementById('stat-cap').textContent = d.total_capacity_mva;
+
+  // GSS table
+  const tbody = document.getElementById('gss-tbody');
+  if (d.gss_breakdown && d.gss_breakdown.length) {
+    tbody.innerHTML = d.gss_breakdown.map(g => `
+      <tr>
+        <td><strong>${g.gss}</strong></td>
+        <td><span class="badge badge-11">${g.substation_count}</span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="filterTree('${g.gss}')">Show →</button></td>
+      </tr>`).join('');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-sub);text-align:center">No data yet — upload Excel to begin</td></tr>';
+  }
+
+  // Map markers
+  if (d.substations_map) addMarkers(d.substations_map);
+}
+
+async function loadHierarchy() {
+  const res = await apiFetch('/api/v1/dashboard/hierarchy');
+  if (!res || !res.ok) return;
+  const tree = await res.json();
+  renderTree(tree);
+}
+
+function renderTree(tree, filter = '') {
+  const container = document.getElementById('hierarchy-tree');
+  if (!tree.length) {
+    container.innerHTML = '<p style="color:var(--text-sub);font-size:.85rem;text-align:center;padding:20px">No substations found.<br/>Upload an Excel file to populate.</p>';
+    return;
+  }
+  container.innerHTML = tree.map(gss => {
+    const matchSubs = (gss.substations || []).filter(s =>
+      !filter || s.name.toLowerCase().includes(filter.toLowerCase()) ||
+      gss.gss_name.toLowerCase().includes(filter.toLowerCase())
+    );
+    if (filter && !matchSubs.length) return '';
+    return `
+    <div class="tree-gss">
+      <div class="tree-gss-header" onclick="toggleGss(this)">
+        <span>⚡</span> ${gss.gss_name}
+        <span style="margin-left:auto;font-size:.8rem;opacity:.7">${matchSubs.length} SS</span>
+        <span style="margin-left:6px">▼</span>
+      </div>
+      <div class="tree-gss-body">
+        ${matchSubs.map(ss => `
+        <div class="tree-ss">
+          <div class="tree-ss-name" onclick="window.location.href='/sld/${ss._id}'">
+            <span style="color:var(--accent33)">▸</span>
+            ${ss.name}
+            <span class="badge badge-11" style="font-size:.68rem">${(ss.topology||{}).outgoing_11kv_count||0} F</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="padding:3px 9px;font-size:.75rem"
+            onclick="event.stopPropagation();window.location.href='/sld/${ss._id}'">SLD</button>
+        </div>
+        ${(ss.feeders||[]).length ? `
+        <div class="tree-feeders" id="feeders-${ss._id}">
+          ${ss.feeders.map(f => `<div class="tree-feeder">${f.name}</div>`).join('')}
+        </div>` : ''}
+        `).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleGss(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('span:last-child');
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? 'block' : 'none';
+  arrow.textContent = isHidden ? '▼' : '▶';
+}
+
+function filterTree(gssName) {
+  document.getElementById('tree-search').value = gssName;
+  loadHierarchyWithFilter(gssName);
+}
+
+async function loadHierarchyWithFilter(filter) {
+  const res = await apiFetch('/api/v1/dashboard/hierarchy');
+  if (!res || !res.ok) return;
+  const tree = await res.json();
+  renderTree(tree, filter);
+}
+
+let treeData = null;
+document.getElementById('tree-search').addEventListener('input', function() {
+  if (treeData) renderTree(treeData, this.value);
+});
+
+async function loadAll() {
+  if (!mapInstance) initMap();
+  await Promise.all([loadStats(), (async () => {
+    const res = await apiFetch('/api/v1/dashboard/hierarchy');
+    if (res && res.ok) {
+      treeData = await res.json();
+      renderTree(treeData);
+    }
+  })()]);
+}
+
+// Init
+if (!Auth.isLoggedIn()) Auth.redirect();
+else loadAll();
+</script>
+{% endblock %}

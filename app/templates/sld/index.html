@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}SLD Viewer — GEC-II SLD Portal{% endblock %}
+
+{% block content %}
+<div id="sld-page">
+  <!-- Breadcrumb + Actions -->
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:12px;">
+    <div>
+      <div style="font-size:.82rem; color:var(--text-sub); margin-bottom:4px;">
+        <a href="/dashboard" style="color:var(--accent11);text-decoration:none;">Dashboard</a>
+        <span style="margin:0 6px">›</span>
+        <span id="ss-breadcrumb">Loading…</span>
+      </div>
+      <h1 style="font-size:1.5rem; font-weight:700;" id="ss-title">Single Line Diagram</h1>
+      <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;" id="ss-badges"></div>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="loadSLD()">↻ Refresh</button>
+      <button class="btn btn-primary btn-sm" id="download-btn" onclick="downloadPDF()">
+        ⬇ Download Report PDF
+      </button>
+    </div>
+  </div>
+
+  <!-- SLD + Info Panel -->
+  <div style="display:grid; grid-template-columns:1fr 300px; gap:20px; align-items:start;">
+
+    <!-- SLD Canvas -->
+    <div>
+      <div class="card" style="padding:12px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+          <div class="card-header" style="margin:0; border:none; padding:0;">
+            <span class="dot33"></span>Single Line Diagram (IEC 60617)
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-ghost btn-sm" onclick="zoomSLD(-0.15)">− Zoom Out</button>
+            <span id="zoom-label" style="font-size:.8rem;color:var(--text-sub);align-self:center">100%</span>
+            <button class="btn btn-ghost btn-sm" onclick="zoomSLD(0.15)">+ Zoom In</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetZoom()">Reset</button>
+          </div>
+        </div>
+        <!-- Legend -->
+        <div style="display:flex; gap:16px; margin-bottom:10px; font-size:.78rem; flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:24px;height:3px;background:#cc2200;vertical-align:middle;margin-right:4px;border-radius:2px"></span>33 kV</span>
+          <span><span style="display:inline-block;width:24px;height:3px;background:#0055cc;vertical-align:middle;margin-right:4px;border-radius:2px"></span>11 kV</span>
+          <span><span style="display:inline-block;width:24px;height:3px;background:#006600;vertical-align:middle;margin-right:4px;border-radius:2px"></span>Earth</span>
+          <span style="color:var(--text-sub)">LA = Lightning Arrester | ISO = Isolator | VCB = Vacuum Circuit Breaker | CT = Current Transformer | PT = Potential Transformer</span>
+        </div>
+        <div class="sld-container" id="sld-canvas">
+          <div class="loading-overlay"><div class="spinner"></div><span>Generating SLD…</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+
+      <!-- Substation Info -->
+      <div class="card">
+        <div class="card-header" style="font-size:.9rem;"><span class="dot33"></span>Substation Details</div>
+        <div id="ss-info" style="font-size:.85rem; line-height:1.8;">
+          <div class="loading-overlay" style="min-height:120px;"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- Topology -->
+      <div class="card">
+        <div class="card-header" style="font-size:.9rem;"><span class="dot11"></span>Network Topology</div>
+        <div id="topo-info" style="font-size:.85rem; line-height:1.8;"></div>
+      </div>
+
+      <!-- Transformers -->
+      <div class="card">
+        <div class="card-header" style="font-size:.9rem;"><span class="dot33"></span>Power Transformers</div>
+        <div id="tr-info"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Feeder Details Table -->
+  <div class="card" style="margin-top:20px;">
+    <div class="card-header"><span class="dot11"></span>Feeder & Equipment Details</div>
+    <div class="table-wrap">
+      <table id="feeder-table">
+        <thead><tr>
+          <th>#</th><th>Feeder Name</th><th>Type</th><th>Voltage</th>
+          <th>Meter No.</th><th>CTR</th><th>MF</th>
+          <th>VCB Type</th><th>Panel Make</th><th>Relay Type</th><th>Status</th>
+        </tr></thead>
+        <tbody id="feeder-tbody">
+          <tr><td colspan="11"><div class="loading-overlay"><div class="spinner"></div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SS_ID = "{{ ss_id }}";
+let sldScale = 1;
+
+async function loadSLD() {
+  const canvas = document.getElementById('sld-canvas');
+  canvas.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><span>Generating SLD…</span></div>';
+  const res = await apiFetch(`/api/v1/sld/${SS_ID}`);
+  if (!res || !res.ok) { canvas.innerHTML = '<p style="color:var(--accent33);padding:20px">Failed to load SLD</p>'; return; }
+  const svg = await res.text();
+  canvas.innerHTML = `<div id="sld-wrap" style="transform-origin:top left;transition:transform .2s">${svg}</div>`;
+}
+
+function zoomSLD(delta) {
+  sldScale = Math.max(0.3, Math.min(3, sldScale + delta));
+  const wrap = document.getElementById('sld-wrap');
+  if (wrap) wrap.style.transform = `scale(${sldScale})`;
+  document.getElementById('zoom-label').textContent = Math.round(sldScale * 100) + '%';
+}
+function resetZoom() { sldScale = 1; zoomSLD(0); }
+
+async function downloadPDF() {
+  const btn = document.getElementById('download-btn');
+  btn.disabled = true; btn.textContent = '⏳ Generating PDF…';
+  try {
+    const res = await apiFetch(`/api/v1/sld/${SS_ID}/pdf`);
+    if (!res || !res.ok) { toast('PDF generation failed', 'error'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `SLD_Report_${SS_ID}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('PDF downloaded', 'success');
+  } catch(e) { toast('Download error: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = '⬇ Download Report PDF'; }
+}
+
+async function loadSubstationInfo() {
+  const res = await apiFetch(`/api/v1/substations/${SS_ID}`);
+  if (!res || !res.ok) return;
+  const ss = await res.json();
+
+  document.getElementById('ss-title').textContent = ss.name;
+  document.getElementById('ss-breadcrumb').textContent = ss.name;
+
+  const badges = document.getElementById('ss-badges');
+  badges.innerHTML = `
+    <span class="badge badge-33">${ss.gss_primary || 'Unknown GSS'}</span>
+    <span class="badge badge-11">${ss.region || '—'} Region</span>
+    <span class="badge" style="background:var(--surface2)">${ss.type || 'Conventional'}</span>
+  `;
+
+  const info = document.getElementById('ss-info');
+  const g = ss.gps || {};
+  info.innerHTML = `
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;">
+      <span style="color:var(--text-sub)">Circle</span><span>${ss.circle||'—'}</span>
+      <span style="color:var(--text-sub)">T&amp;C</span><span>${ss.tnc||'—'}</span>
+      <span style="color:var(--text-sub)">ESD</span><span>${ss.esd||'—'}</span>
+      <span style="color:var(--text-sub)">Grid Source</span><span style="color:var(--accent33);font-weight:600">${ss.gss_primary||'—'}</span>
+      <span style="color:var(--text-sub)">Alt. GSS</span><span>${ss.gss_alternate||'—'}</span>
+      <span style="color:var(--text-sub)">GPS</span><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem">${g.lat||'—'}°N, ${g.lon||'—'}°E</span>
+    </div>
+  `;
+
+  const topo = ss.topology || {};
+  document.getElementById('topo-info').innerHTML = `
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;">
+      <span style="color:var(--text-sub)">Bus Config</span>
+      <span><span class="badge badge-11">${(topo.bus_config||'single_bus').replace('_',' ')}</span></span>
+      <span style="color:var(--text-sub)">Transformers</span><span>${topo.num_transformers||0}</span>
+      <span style="color:var(--text-sub)">Bus Coupler</span><span>${topo.has_bus_coupler ? '✅ Yes' : 'No'}</span>
+      <span style="color:var(--text-sub)">Station TR</span><span>${topo.has_station_transformer ? '✅ Yes' : 'No'}</span>
+      <span style="color:var(--text-sub)">33kV Incomers</span><span style="color:var(--accent33);font-weight:600">${topo.incoming_33kv_count||0}</span>
+      <span style="color:var(--text-sub)">11kV Feeders</span><span style="color:var(--accent11);font-weight:600">${topo.outgoing_11kv_count||0}</span>
+    </div>
+  `;
+
+  // Transformers
+  const trDiv = document.getElementById('tr-info');
+  if (ss.transformers && ss.transformers.length) {
+    trDiv.innerHTML = ss.transformers.map(tr => `
+      <div style="border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:.9rem;margin-bottom:4px;color:var(--accent33)">
+          Transformer ${tr.sequence} — ${tr.capacity_mva} MVA
+        </div>
+        <div style="font-size:.82rem;color:var(--text-sub);display:grid;grid-template-columns:auto 1fr;gap:2px 8px;">
+          <span>Make</span><span style="color:var(--text)">${tr.make||'—'}</span>
+          <span>YOM</span><span style="color:var(--text)">${tr.yom||'—'}</span>
+          <span>Max Load</span><span style="color:var(--text)">${tr.max_loading_mw||'—'} MW</span>
+          <span>OTI / WTI</span><span style="color:var(--text)">${tr.max_oti_c||'—'}°C / ${tr.max_wti_c||'—'}°C</span>
+        </div>
+      </div>
+    `).join('');
+  } else {
+    trDiv.innerHTML = '<p style="color:var(--text-sub);font-size:.85rem">No transformer data</p>';
+  }
+
+  // Feeders table
+  const tbody = document.getElementById('feeder-tbody');
+  if (ss.feeders && ss.feeders.length) {
+    const typeLabel = {
+      incoming_33kv: '<span class="badge badge-33">33kV IN</span>',
+      transformer_hv: '<span class="badge" style="background:rgba(120,0,200,.1);color:#7700cc">TR HV</span>',
+      incomer_11kv: '<span class="badge badge-11">11kV IC</span>',
+      outgoing_11kv: '<span class="badge badge-11">11kV OUT</span>',
+      bus_coupler: '<span class="badge badge-warn">BC</span>',
+      station_transformer: '<span class="badge badge-ok">STN TR</span>',
+    };
+    const statusBadge = v => {
+      if (!v) return '<span style="color:var(--text-sub)">—</span>';
+      const l = v.toLowerCase();
+      if (l.includes('working') || l === 'ok') return `<span class="badge badge-ok">${v}</span>`;
+      if (l.includes('defective') || l.includes('not')) return `<span class="badge badge-err">${v}</span>`;
+      return `<span class="badge badge-warn">${v}</span>`;
+    };
+    tbody.innerHTML = ss.feeders.map((f, i) => {
+      const mt = f.meter || {}; const sg = f.switchgear || {};
+      return `<tr>
+        <td>${i+1}</td>
+        <td><strong>${f.name}</strong></td>
+        <td>${typeLabel[f.feeder_type]||f.feeder_type}</td>
+        <td><span class="badge ${f.voltage_kv===33?'badge-33':'badge-11'}">${f.voltage_kv} kV</span></td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:.8rem">${mt.number||'—'}</td>
+        <td>${mt.ctr||'—'}</td>
+        <td>${mt.mf||'—'}</td>
+        <td>${sg.vcb_type||'—'}</td>
+        <td>${sg.panel_make||'—'}</td>
+        <td>${sg.oc_ef_relay_type||'—'}</td>
+        <td>${statusBadge(sg.vcb_status)}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-sub)">No feeder data</td></tr>';
+  }
+}
+
+if (!Auth.isLoggedIn()) Auth.redirect();
+else {
+  loadSubstationInfo();
+  loadSLD();
+}
+</script>
+{% endblock %}

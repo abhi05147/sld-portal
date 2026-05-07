@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In — GEC-II SLD Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #f0f4fc; --surface: #ffffff; --border: #dde3ef;
+      --text: #1a2744; --text-sub: #5a6a8a;
+      --accent33: #cc2200; --accent11: #0055cc;
+      --nav-bg: #1a2744;
+    }
+    [data-theme="dark"] {
+      --bg: #0f1623; --surface: #18212f; --border: #2a3a55;
+      --text: #e0eaff; --text-sub: #8899bb;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Rajdhani', sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+    }
+    /* Animated grid background */
+    body::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,85,204,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,85,204,.06) 1px, transparent 1px);
+      background-size: 40px 40px;
+      animation: gridShift 20s linear infinite;
+    }
+    @keyframes gridShift { to { background-position: 40px 40px; } }
+    body::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 40%, transparent 40%, var(--bg) 100%);
+    }
+
+    .login-card {
+      position: relative; z-index: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 44px 40px;
+      width: 100%; max-width: 420px;
+      box-shadow: 0 8px 40px rgba(26,39,68,.14);
+    }
+    .login-logo {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 32px;
+    }
+    .logo-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, #cc2200, #ff6644);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; color: white;
+      box-shadow: 0 4px 12px rgba(204,34,0,.3);
+    }
+    .logo-text { line-height: 1.1; }
+    .logo-text .app-name {
+      font-size: 1.3rem; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    }
+    .logo-text .app-sub {
+      font-size: .78rem; color: var(--text-sub); font-weight: 500; letter-spacing: .3px;
+    }
+
+    h2 {
+      font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; color: var(--text);
+    }
+    .subtitle {
+      font-size: .88rem; color: var(--text-sub); margin-bottom: 28px; font-weight: 500;
+    }
+
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block; font-size: .8rem; font-weight: 700;
+      color: var(--text-sub); margin-bottom: 6px; letter-spacing: .5px;
+      text-transform: uppercase;
+    }
+    .input-wrap { position: relative; }
+    .input-wrap .icon {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      font-size: 1rem; pointer-events: none;
+    }
+    input {
+      width: 100%; padding: 11px 12px 11px 38px;
+      background: var(--bg); border: 1.5px solid var(--border);
+      border-radius: 8px; color: var(--text);
+      font-family: 'Rajdhani', sans-serif; font-size: .95rem;
+      outline: none; transition: border .2s, box-shadow .2s;
+    }
+    input:focus {
+      border-color: var(--accent11);
+      box-shadow: 0 0 0 3px rgba(0,85,204,.12);
+    }
+
+    .btn-login {
+      width: 100%; padding: 13px;
+      background: var(--accent11); color: white;
+      border: none; border-radius: 9px;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.05rem; font-weight: 700; letter-spacing: .5px;
+      cursor: pointer; margin-top: 8px;
+      transition: background .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 14px rgba(0,85,204,.25);
+    }
+    .btn-login:hover {
+      background: #0044aa; transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(0,85,204,.35);
+    }
+    .btn-login:active { transform: translateY(0); }
+    .btn-login:disabled { background: #7799cc; cursor: not-allowed; transform: none; }
+
+    .error-msg {
+      background: rgba(204,34,0,.09); border: 1px solid rgba(204,34,0,.25);
+      border-radius: 8px; padding: 10px 14px;
+      color: var(--accent33); font-size: .88rem; font-weight: 600;
+      margin-bottom: 18px; display: none;
+    }
+
+    .divider {
+      border: none; border-top: 1px solid var(--border); margin: 24px 0;
+    }
+
+    .voltage-badges {
+      display: flex; gap: 8px; justify-content: center;
+    }
+    .vbadge {
+      font-size: .72rem; font-weight: 700; padding: 3px 10px;
+      border-radius: 10px; letter-spacing: .5px;
+    }
+    .vbadge-33 { background: rgba(204,34,0,.1); color: var(--accent33); }
+    .vbadge-11 { background: rgba(0,85,204,.1); color: var(--accent11); }
+    .vbadge-g  { background: rgba(0,102,0,.1);  color: #006600; }
+
+    .theme-toggle {
+      position: absolute; top: 20px; right: 20px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 11px; cursor: pointer;
+      font-size: 1rem; z-index: 2; transition: background .2s;
+    }
+    .theme-toggle:hover { background: var(--border); }
+
+    #toast-container {
+      position: fixed; bottom: 24px; right: 24px;
+      display: flex; flex-direction: column; gap: 8px; z-index: 9999;
+    }
+    .toast {
+      background: var(--surface); border: 1px solid var(--border);
+      border-left: 4px solid var(--accent11);
+      border-radius: 8px; padding: 12px 16px; min-width: 240px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.15); font-size: .88rem; font-weight: 500;
+      animation: slideIn .3s ease;
+    }
+    .toast.error { border-left-color: var(--accent33); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity:0; } }
+  </style>
+</head>
+<body>
+  <button class="theme-toggle" id="theme-toggle">🌙</button>
+
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon">⚡</div>
+      <div class="logo-text">
+        <div class="app-name">GEC-II SLD Portal</div>
+        <div class="app-sub">Electrical Substation Management</div>
+      </div>
+    </div>
+
+    <h2>Sign In</h2>
+    <p class="subtitle">Access the substation management system</p>
+
+    <div class="error-msg" id="error-msg"></div>
+
+    <form id="login-form" autocomplete="off">
+      <div class="form-group">
+        <label>Username</label>
+        <div class="input-wrap">
+          <span class="icon">👤</span>
+          <input type="text" id="username" placeholder="Enter username" autocomplete="username" required/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="input-wrap">
+          <span class="icon">🔒</span>
+          <input type="password" id="password" placeholder="Enter password" autocomplete="current-password" required/>
+        </div>
+      </div>
+      <button type="submit" class="btn-login" id="login-btn">Sign In</button>
+    </form>
+
+    <hr class="divider"/>
+    <div class="voltage-badges">
+      <span class="vbadge vbadge-33">33 kV Network</span>
+      <span class="vbadge vbadge-11">11 kV Distribution</span>
+      <span class="vbadge vbadge-g">IEC 60617</span>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script>
+    // Theme
+    const t = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', t);
+    const tb = document.getElementById('theme-toggle');
+    tb.textContent = t === 'dark' ? '☀️' : '🌙';
+    tb.addEventListener('click', () => {
+      const nt = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', nt);
+      localStorage.setItem('theme', nt);
+      tb.textContent = nt === 'dark' ? '☀️' : '🌙';
+    });
+
+    // Redirect if already logged in
+    if (localStorage.getItem('access_token')) window.location.href = '/dashboard';
+
+    function toast(msg, type='error') {
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.textContent = msg;
+      document.getElementById('toast-container').appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('login-btn');
+      btn.disabled = true; btn.textContent = 'Signing in…';
+      const errEl = document.getElementById('error-msg');
+      errEl.style.display = 'none';
+
+      const body = JSON.stringify({
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+      });
+
+      try {
+        const res = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.error || 'Login failed';
+          errEl.style.display = 'block';
+        } else {
+          localStorage.setItem('access_token', data.access_token);
+          localStorage.setItem('refresh_token', data.refresh_token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          window.location.href = '/dashboard';
+        }
+      } catch (err) {
+        errEl.textContent = 'Network error. Please try again.';
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>
