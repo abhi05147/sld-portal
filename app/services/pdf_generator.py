@@ -273,7 +273,7 @@ class PDFReportGenerator:
         canvas.rect(0, h-12*mm, w, 12*mm, fill=1, stroke=0)
         canvas.setFont("Helvetica-Bold", 9)
         canvas.setFillColor(C_WHITE)
-        canvas.drawCentredString(w/2, h-8*mm, "GEC-II CIRCLE — ELECTRICAL SUBSTATION SLD PORTAL")
+        canvas.drawCentredString(w/2, h-8*mm, "APDCL — SUB-STATION MONITORING PORTAL")
         # Footer
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#888888"))

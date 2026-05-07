@@ -138,7 +138,7 @@ def generate_template() -> bytes:
     # ── Instructions sheet ──
     ws2 = wb.create_sheet("Instructions")
     instructions = [
-        ["GEC-II SLD Portal — Excel Import Template"],
+        ["APDCL Sub-Station Monitoring Portal — Excel Import Template"],
         [""],
         ["IMPORTANT RULES:"],
         ["1. Do NOT modify the header row (Row 1)."],
