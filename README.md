@@ -1,4 +1,4 @@
-# GEC-II SLD Portal
+# APDCL SLD Portal
 
 Web application for displaying IEC-compliant Single Line Diagrams (SLDs) of 33/11 kV electrical substations, built with Flask, MongoDB Atlas, and SVG-based IEC 60617 symbols.
 
