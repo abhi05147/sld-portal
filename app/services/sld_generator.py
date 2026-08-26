@@ -214,18 +214,29 @@ class SLDGenerator:
     def _render_single_bus(self, ss, feeders, transformers, topo):
         outgoing = [f for f in feeders if f["feeder_type"] == "outgoing_11kv"]
         incoming = [f for f in feeders if f["feeder_type"] == "incoming_33kv"]
+        lilo     = [f for f in feeders if f["feeder_type"] == "lilo_33kv"]
         num_out  = max(len(outgoing), 2)
         num_tr   = max(len(transformers), 1)
+        num_lilo = len(lilo)
         margin   = 80
         col_w    = 110
-        total_w  = max(860, num_out * col_w + margin * 2)
+        tr_col_w = 180
+
+        tr_zone_w   = num_tr * tr_col_w
+        lilo_zone_w = num_lilo * col_w
+        combined_zone_w = tr_zone_w + lilo_zone_w
+        total_w  = max(860, num_out * col_w + margin * 2, combined_zone_w + margin * 2)
         cx       = total_w // 2
+        zone_x0  = cx - combined_zone_w // 2
+        tr_start = zone_x0 + tr_col_w // 2
+        lilo_x0  = zone_x0 + tr_zone_w
 
         Y = dict(
             top=60, la=95, iso1=134, vcb33=178, ct33=218,
             bus33=254, iso_tr=290, tr=350, vcb11=430,
             ct11=460, bus11=496, iso_out=532, vcb_out=574,
             ct_out=614, feeder=644,
+            iso_lilo=290, vcb_lilo=332, ct_lilo=372, feeder_lilo=402,
         )
         total_h = Y["feeder"] + 100 + 200 + len(feeders) * 14
         p = [self._svg_header(ss, total_w, total_h)]
@@ -246,10 +257,8 @@ class SLDGenerator:
         p.append(sym_line(cx, Y["ct33"]+20, cx, Y["bus33"]))
         p.append(sym_busbar(margin, Y["bus33"], total_w-margin, "33 kV BUS", "#111111", 33))
 
-        tr_spacing = max(160, (total_w - margin*2) // max(num_tr, 1))
-        tr_start   = cx - ((num_tr-1)*tr_spacing)//2
         for i, tr in enumerate(transformers):
-            tx  = tr_start + i*tr_spacing
+            tx  = tr_start + i*tr_col_w
             cap = tr.get("capacity_mva", "?")
             p.append(sym_line(tx, Y["bus33"], tx, Y["iso_tr"]-18, color="#CC2200"))
             p.append(sym_isolator(tx, Y["iso_tr"], has_earth=True, color="#CC2200", label="800A,25kA"))
@@ -260,6 +269,22 @@ class SLDGenerator:
             p.append(sym_line(tx, Y["vcb11"]+22, tx, Y["ct11"]-20, color="#0055CC"))
             p.append(sym_ct(tx, Y["ct11"], label="11kV CT", color="#555"))
             p.append(sym_line(tx, Y["ct11"]+20, tx, Y["bus11"], color="#0055CC"))
+
+        if lilo:
+            lilo_cx = lilo_x0 + lilo_zone_w // 2
+            p.append(f'<text x="{lilo_cx}" y="{Y["bus33"]+18}" text-anchor="middle" class="lbl33" font-size="9">33kV LILO TAPS</text>')
+        for i, fd in enumerate(lilo):
+            lx = lilo_x0 + i*col_w + col_w//2
+            ar = is_autorecloser(fd)
+            c  = "#CC2200"
+            p.append(sym_line(lx, Y["bus33"], lx, Y["iso_lilo"]-18, color=c))
+            p.append(sym_isolator(lx, Y["iso_lilo"], has_earth=True, color=c, label="800A,13kA"))
+            p.append(sym_line(lx+12, Y["iso_lilo"]+18, lx, Y["vcb_lilo"]-(26 if ar else 22), color=c))
+            p.append(sym_autorecloser(lx, Y["vcb_lilo"], color=c) if ar else sym_vcb(lx, Y["vcb_lilo"], label="VCB", color=c))
+            p.append(sym_line(lx, Y["vcb_lilo"]+22, lx, Y["ct_lilo"]-20, color=c))
+            p.append(sym_ct(lx, Y["ct_lilo"], color="#555"))
+            p.append(sym_line(lx, Y["ct_lilo"]+20, lx, Y["feeder_lilo"], color=c))
+            p.append(sym_feeder_out(lx, Y["feeder_lilo"], fd["name"], 33, ar))
 
         p.append(sym_busbar(margin, Y["bus11"], total_w-margin, "11 kV BUS", "#0055CC", 11))
         p.append(sym_bus_pt(margin-10, Y["bus11"]-40, label="11kV Bus PT"))
@@ -288,18 +313,26 @@ class SLDGenerator:
     def _render_double_bus(self, ss, feeders, transformers, topo):
         outgoing   = [f for f in feeders if f["feeder_type"] == "outgoing_11kv"]
         incoming33 = [f for f in feeders if f["feeder_type"] == "incoming_33kv"]
+        lilo       = [f for f in feeders if f["feeder_type"] == "lilo_33kv"]
         num_out    = max(len(outgoing), 2)
         num_tr     = max(len(transformers), 2)
+        num_lilo   = len(lilo)
         margin     = 80
         col_w      = 110
-        total_w    = max(980, num_out * col_w + margin * 2 + 160)
+        tr_col_w   = 160
+        tr_zone_w  = num_tr * tr_col_w
+        lilo_zone_w = num_lilo * col_w
+        total_w    = max(980, num_out * col_w + margin * 2 + 160, margin*2 + tr_zone_w + lilo_zone_w)
         cx         = total_w // 2
+        tr_start   = margin + tr_col_w // 2
+        lilo_x0    = margin + tr_zone_w
 
         Y = dict(
             top=55, la=90, iso1=128, vcb33=172, ct33=212,
             bus33=248, iso_tr=284, tr=344, vcb11ic=424,
             ct11ic=454, bus11a=490, bus11b=570,
             iso_out=618, vcb_out=660, ct_out=700, feeder=730,
+            iso_lilo=284, vcb_lilo=326, ct_lilo=366, feeder_lilo=396,
         )
         total_h = Y["feeder"] + 110 + 200 + len(feeders)*14
         p = [self._svg_header(ss, total_w, total_h)]
@@ -327,10 +360,8 @@ class SLDGenerator:
         p.append(sym_busbar(margin, Y["bus33"], total_w-margin, "33 kV BUS", "#111111", 33))
 
         # Transformers
-        tr_sp  = max(160, (total_w - margin*2) // max(num_tr, 2))
-        tr_start = margin + tr_sp//2
         for i, tr in enumerate(transformers):
-            tx  = tr_start + i*tr_sp
+            tx  = tr_start + i*tr_col_w
             cap = tr.get("capacity_mva", "?")
             p.append(sym_line(tx, Y["bus33"], tx, Y["iso_tr"]-18, color="#CC2200"))
             p.append(sym_isolator(tx, Y["iso_tr"], has_earth=False, color="#CC2200", label="800A,25kA"))
@@ -342,6 +373,22 @@ class SLDGenerator:
             p.append(sym_ct(tx, Y["ct11ic"], label="11kV CT", color="#555"))
             bus_y = Y["bus11a"] if i == 0 else Y["bus11b"]
             p.append(sym_line(tx, Y["ct11ic"]+20, tx, bus_y, color="#0055CC"))
+
+        if lilo:
+            lilo_cx = lilo_x0 + lilo_zone_w // 2
+            p.append(f'<text x="{lilo_cx}" y="{Y["bus33"]+18}" text-anchor="middle" class="lbl33" font-size="9">33kV LILO TAPS</text>')
+        for i, fd in enumerate(lilo):
+            lx = lilo_x0 + i*col_w + col_w//2
+            ar = is_autorecloser(fd)
+            c  = "#CC2200"
+            p.append(sym_line(lx, Y["bus33"], lx, Y["iso_lilo"]-18, color=c))
+            p.append(sym_isolator(lx, Y["iso_lilo"], has_earth=True, color=c, label="800A,13kA"))
+            p.append(sym_line(lx+12, Y["iso_lilo"]+18, lx, Y["vcb_lilo"]-(26 if ar else 22), color=c))
+            p.append(sym_autorecloser(lx, Y["vcb_lilo"], color=c) if ar else sym_vcb(lx, Y["vcb_lilo"], label="VCB", color=c))
+            p.append(sym_line(lx, Y["vcb_lilo"]+22, lx, Y["ct_lilo"]-20, color=c))
+            p.append(sym_ct(lx, Y["ct_lilo"], color="#555"))
+            p.append(sym_line(lx, Y["ct_lilo"]+20, lx, Y["feeder_lilo"], color=c))
+            p.append(sym_feeder_out(lx, Y["feeder_lilo"], fd["name"], 33, ar))
 
         # 11kV Bus 1 (left half) and Bus 2 (right half)
         p.append(sym_busbar(margin, Y["bus11a"], cx-30, "11 kV BUS - 1", "#0055CC", 11))
@@ -413,7 +460,7 @@ class SLDGenerator:
                          str(tr.get("yom","-") or "-"),
                          f"OTI:{tr.get('max_oti_c','-')}°C WTI:{tr.get('max_wti_c','-')}°C"))
         for fd in feeders:
-            if fd["feeder_type"] not in ("outgoing_11kv","incoming_33kv"):
+            if fd["feeder_type"] not in ("outgoing_11kv","incoming_33kv","lilo_33kv"):
                 continue
             sg = fd.get("switchgear",{})
             mt = fd.get("meter",{})

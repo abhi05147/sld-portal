@@ -16,6 +16,8 @@
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm" onclick="loadSLD()">↻ Refresh</button>
+      <a class="btn btn-ghost btn-sm" id="edit-ss-btn" style="display:none" href="/substations/{{ ss_id }}/edit">Edit Substation</a>
+      <button class="btn btn-danger btn-sm" id="delete-ss-btn" style="display:none" onclick="deleteSubstation()">Delete Substation</button>
       <button class="btn btn-primary btn-sm" id="download-btn" onclick="downloadPDF()">
         ⬇ Download Report PDF
       </button>
@@ -86,12 +88,68 @@
         <thead><tr>
           <th>#</th><th>Feeder Name</th><th>Type</th><th>Voltage</th>
           <th>Meter No.</th><th>CTR</th><th>MF</th>
-          <th>VCB Type</th><th>Panel Make</th><th>Relay Type</th><th>Status</th>
+          <th>VCB Type</th><th>Panel Make</th><th>Relay Type</th><th>Status</th><th class="feeder-actions" style="display:none">Actions</th>
         </tr></thead>
         <tbody id="feeder-tbody">
           <tr><td colspan="11"><div class="loading-overlay"><div class="spinner"></div></div></td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="feeder-modal">
+    <div class="modal-card" style="max-width:720px;">
+      <div class="modal-header">Edit Feeder</div>
+      <input type="hidden" id="edit-feeder-id"/>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-top:16px;">
+        <div class="form-group">
+          <label>Feeder Name</label>
+          <input type="text" id="edit-feeder-name"/>
+        </div>
+        <div class="form-group">
+          <label>Voltage</label>
+          <select id="edit-feeder-voltage">
+            <option value="11">11 kV</option>
+            <option value="33">33 kV</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="edit-feeder-type">
+            <option value="incoming_33kv">33kV Incoming</option>
+            <option value="transformer_hv">Transformer HV</option>
+            <option value="incomer_11kv">11kV Incomer</option>
+            <option value="outgoing_11kv">11kV Outgoing</option>
+            <option value="lilo_33kv">33kV LILO</option>
+            <option value="bus_coupler">Bus Coupler</option>
+            <option value="station_transformer">Station Transformer</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+        <div class="form-group"><label>Meter No.</label><input type="text" id="edit-meter-number"/></div>
+        <div class="form-group"><label>CTR</label><input type="text" id="edit-meter-ctr"/></div>
+        <div class="form-group"><label>MF</label><input type="number" step="0.001" id="edit-meter-mf"/></div>
+        <div class="form-group"><label>VCB Type</label><input type="text" id="edit-vcb-type"/></div>
+        <div class="form-group"><label>Panel Make</label><input type="text" id="edit-panel-make"/></div>
+        <div class="form-group"><label>Relay Type</label><input type="text" id="edit-relay-type"/></div>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="edit-vcb-status">
+          <option value="">—</option>
+          <option value="Working">Working</option>
+          <option value="Defective">Defective</option>
+          <option value="Not Available">Not Available</option>
+        </select>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:700;font-size:.85rem;margin-bottom:16px;">
+        <input type="checkbox" id="edit-is-ar" style="width:auto"/> Autorecloser
+      </label>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="closeFeederModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveFeeder()">Save Feeder</button>
+      </div>
     </div>
   </div>
 </div>
@@ -101,6 +159,17 @@
 <script>
 const SS_ID = "{{ ss_id }}";
 let sldScale = 1;
+let currentSubstation = null;
+let feedersById = {};
+const currentUser = Auth.getUser();
+const canEdit = ['admin','engineer'].includes(currentUser?.role);
+const canDelete = currentUser?.role === 'admin';
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
 
 async function loadSLD() {
   const canvas = document.getElementById('sld-canvas');
@@ -136,31 +205,51 @@ async function downloadPDF() {
   finally { btn.disabled = false; btn.textContent = '⬇ Download Report PDF'; }
 }
 
+async function deleteSubstation() {
+  const name = currentSubstation?.name || 'this substation';
+  if (!confirm(`Delete ${name}? This will also delete its feeders and transformers.`)) return;
+  const res = await apiFetch(`/api/v1/substations/${SS_ID}`, { method: 'DELETE' });
+  if (!res || !res.ok) {
+    const d = res ? await res.json().catch(() => ({})) : {};
+    toast(d.error || 'Failed to delete substation', 'error');
+    return;
+  }
+  toast('Substation deleted', 'success');
+  setTimeout(() => window.location.href = '/dashboard', 700);
+}
+
 async function loadSubstationInfo() {
   const res = await apiFetch(`/api/v1/substations/${SS_ID}`);
   if (!res || !res.ok) return;
   const ss = await res.json();
+  currentSubstation = ss;
+  feedersById = {};
+  (ss.feeders || []).forEach(f => { feedersById[f._id] = f; });
+
+  document.getElementById('edit-ss-btn').style.display = canEdit ? '' : 'none';
+  document.getElementById('delete-ss-btn').style.display = canDelete ? '' : 'none';
+  document.querySelectorAll('.feeder-actions').forEach(el => { el.style.display = canEdit ? '' : 'none'; });
 
   document.getElementById('ss-title').textContent = ss.name;
   document.getElementById('ss-breadcrumb').textContent = ss.name;
 
   const badges = document.getElementById('ss-badges');
   badges.innerHTML = `
-    <span class="badge badge-33">${ss.gss_primary || 'Unknown GSS'}</span>
-    <span class="badge badge-11">${ss.region || '—'} Region</span>
-    <span class="badge" style="background:var(--surface2)">${ss.type || 'Conventional'}</span>
+    <span class="badge badge-33">${escapeHtml(ss.gss_primary || 'Unknown GSS')}</span>
+    <span class="badge badge-11">${escapeHtml(ss.region || '—')} Region</span>
+    <span class="badge" style="background:var(--surface2)">${escapeHtml(ss.type || 'Conventional')}</span>
   `;
 
   const info = document.getElementById('ss-info');
   const g = ss.gps || {};
   info.innerHTML = `
     <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;">
-      <span style="color:var(--text-sub)">Circle</span><span>${ss.circle||'—'}</span>
-      <span style="color:var(--text-sub)">T&amp;C</span><span>${ss.tnc||'—'}</span>
-      <span style="color:var(--text-sub)">ESD</span><span>${ss.esd||'—'}</span>
-      <span style="color:var(--text-sub)">Grid Source</span><span style="color:var(--accent33);font-weight:600">${ss.gss_primary||'—'}</span>
-      <span style="color:var(--text-sub)">Alt. GSS</span><span>${ss.gss_alternate||'—'}</span>
-      <span style="color:var(--text-sub)">GPS</span><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem">${g.lat||'—'}°N, ${g.lon||'—'}°E</span>
+      <span style="color:var(--text-sub)">Circle</span><span>${escapeHtml(ss.circle||'—')}</span>
+      <span style="color:var(--text-sub)">T&amp;C</span><span>${escapeHtml(ss.tnc||'—')}</span>
+      <span style="color:var(--text-sub)">ESD</span><span>${escapeHtml(ss.esd||'—')}</span>
+      <span style="color:var(--text-sub)">Grid Source</span><span style="color:var(--accent33);font-weight:600">${escapeHtml(ss.gss_primary||'—')}</span>
+      <span style="color:var(--text-sub)">Alt. GSS</span><span>${escapeHtml(ss.gss_alternate||'—')}</span>
+      <span style="color:var(--text-sub)">GPS</span><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem">${escapeHtml(g.lat||'—')}°N, ${escapeHtml(g.lon||'—')}°E</span>
     </div>
   `;
 
@@ -174,6 +263,7 @@ async function loadSubstationInfo() {
       <span style="color:var(--text-sub)">Station TR</span><span>${topo.has_station_transformer ? '✅ Yes' : 'No'}</span>
       <span style="color:var(--text-sub)">33kV Incomers</span><span style="color:var(--accent33);font-weight:600">${topo.incoming_33kv_count||0}</span>
       <span style="color:var(--text-sub)">11kV Feeders</span><span style="color:var(--accent11);font-weight:600">${topo.outgoing_11kv_count||0}</span>
+      <span style="color:var(--text-sub)">33kV LILO Taps</span><span style="color:var(--accent33);font-weight:600">${topo.lilo_33kv_count||0}</span>
     </div>
   `;
 
@@ -183,13 +273,13 @@ async function loadSubstationInfo() {
     trDiv.innerHTML = ss.transformers.map(tr => `
       <div style="border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:8px;">
         <div style="font-weight:700;font-size:.9rem;margin-bottom:4px;color:var(--accent33)">
-          Transformer ${tr.sequence} — ${tr.capacity_mva} MVA
+          Transformer ${escapeHtml(tr.sequence)} — ${escapeHtml(tr.capacity_mva)} MVA
         </div>
         <div style="font-size:.82rem;color:var(--text-sub);display:grid;grid-template-columns:auto 1fr;gap:2px 8px;">
-          <span>Make</span><span style="color:var(--text)">${tr.make||'—'}</span>
-          <span>YOM</span><span style="color:var(--text)">${tr.yom||'—'}</span>
-          <span>Max Load</span><span style="color:var(--text)">${tr.max_loading_mw||'—'} MW</span>
-          <span>OTI / WTI</span><span style="color:var(--text)">${tr.max_oti_c||'—'}°C / ${tr.max_wti_c||'—'}°C</span>
+          <span>Make</span><span style="color:var(--text)">${escapeHtml(tr.make||'—')}</span>
+          <span>YOM</span><span style="color:var(--text)">${escapeHtml(tr.yom||'—')}</span>
+          <span>Max Load</span><span style="color:var(--text)">${escapeHtml(tr.max_loading_mw||'—')} MW</span>
+          <span>OTI / WTI</span><span style="color:var(--text)">${escapeHtml(tr.max_oti_c||'—')}°C / ${escapeHtml(tr.max_wti_c||'—')}°C</span>
         </div>
       </div>
     `).join('');
@@ -205,6 +295,7 @@ async function loadSubstationInfo() {
       transformer_hv: '<span class="badge" style="background:rgba(120,0,200,.1);color:#7700cc">TR HV</span>',
       incomer_11kv: '<span class="badge badge-11">11kV IC</span>',
       outgoing_11kv: '<span class="badge badge-11">11kV OUT</span>',
+      lilo_33kv: '<span class="badge badge-33">33kV LILO</span>',
       bus_coupler: '<span class="badge badge-warn">BC</span>',
       station_transformer: '<span class="badge badge-ok">STN TR</span>',
     };
@@ -212,28 +303,107 @@ async function loadSubstationInfo() {
       if (!v) return '<span style="color:var(--text-sub)">—</span>';
       const l = v.toLowerCase();
       if (l.includes('working') || l === 'ok') return `<span class="badge badge-ok">${v}</span>`;
-      if (l.includes('defective') || l.includes('not')) return `<span class="badge badge-err">${v}</span>`;
-      return `<span class="badge badge-warn">${v}</span>`;
+      if (l.includes('defective') || l.includes('not')) return `<span class="badge badge-err">${escapeHtml(v)}</span>`;
+      return `<span class="badge badge-warn">${escapeHtml(v)}</span>`;
     };
     tbody.innerHTML = ss.feeders.map((f, i) => {
       const mt = f.meter || {}; const sg = f.switchgear || {};
       return `<tr>
         <td>${i+1}</td>
-        <td><strong>${f.name}</strong></td>
-        <td>${typeLabel[f.feeder_type]||f.feeder_type}</td>
-        <td><span class="badge ${f.voltage_kv===33?'badge-33':'badge-11'}">${f.voltage_kv} kV</span></td>
-        <td style="font-family:'JetBrains Mono',monospace;font-size:.8rem">${mt.number||'—'}</td>
-        <td>${mt.ctr||'—'}</td>
-        <td>${mt.mf||'—'}</td>
-        <td>${sg.vcb_type||'—'}</td>
-        <td>${sg.panel_make||'—'}</td>
-        <td>${sg.oc_ef_relay_type||'—'}</td>
+        <td><strong>${escapeHtml(f.name)}</strong></td>
+        <td>${typeLabel[f.feeder_type]||escapeHtml(f.feeder_type)}</td>
+        <td><span class="badge ${f.voltage_kv===33?'badge-33':'badge-11'}">${escapeHtml(f.voltage_kv)} kV</span></td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:.8rem">${escapeHtml(mt.number||'—')}</td>
+        <td>${escapeHtml(mt.ctr||'—')}</td>
+        <td>${escapeHtml(mt.mf||'—')}</td>
+        <td>${escapeHtml(sg.vcb_type||'—')}</td>
+        <td>${escapeHtml(sg.panel_make||'—')}</td>
+        <td>${escapeHtml(sg.oc_ef_relay_type||'—')}</td>
         <td>${statusBadge(sg.vcb_status)}</td>
+        <td class="feeder-actions" style="${canEdit ? '' : 'display:none'}">
+          <button class="btn btn-ghost btn-sm" onclick="openFeederModal('${f._id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteFeeder('${f._id}')">Delete</button>
+        </td>
       </tr>`;
     }).join('');
   } else {
     tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-sub)">No feeder data</td></tr>';
   }
+}
+
+function setEditValue(id, value) {
+  document.getElementById(id).value = value ?? '';
+}
+
+function openFeederModal(id) {
+  const feeder = feedersById[id];
+  if (!feeder) return;
+  const mt = feeder.meter || {};
+  const sg = feeder.switchgear || {};
+  setEditValue('edit-feeder-id', feeder._id);
+  setEditValue('edit-feeder-name', feeder.name);
+  setEditValue('edit-feeder-voltage', feeder.voltage_kv || 11);
+  setEditValue('edit-feeder-type', feeder.feeder_type || 'outgoing_11kv');
+  setEditValue('edit-meter-number', mt.number);
+  setEditValue('edit-meter-ctr', mt.ctr);
+  setEditValue('edit-meter-mf', mt.mf);
+  setEditValue('edit-vcb-type', sg.vcb_type);
+  setEditValue('edit-panel-make', sg.panel_make);
+  setEditValue('edit-relay-type', sg.oc_ef_relay_type);
+  setEditValue('edit-vcb-status', sg.vcb_status);
+  document.getElementById('edit-is-ar').checked = !!feeder.is_autorecloser;
+  document.getElementById('feeder-modal').classList.add('open');
+}
+
+function closeFeederModal() {
+  document.getElementById('feeder-modal').classList.remove('open');
+}
+
+async function saveFeeder() {
+  const id = document.getElementById('edit-feeder-id').value;
+  const name = document.getElementById('edit-feeder-name').value.trim();
+  if (!id || !name) { toast('Feeder name is required', 'error'); return; }
+  const body = {
+    name,
+    voltage_kv: parseInt(document.getElementById('edit-feeder-voltage').value),
+    feeder_type: document.getElementById('edit-feeder-type').value,
+    is_autorecloser: document.getElementById('edit-is-ar').checked,
+    meter: {
+      number: document.getElementById('edit-meter-number').value.trim() || null,
+      ctr: document.getElementById('edit-meter-ctr').value.trim() || null,
+      mf: parseFloat(document.getElementById('edit-meter-mf').value) || null,
+    },
+    switchgear: {
+      vcb_type: document.getElementById('edit-vcb-type').value.trim() || null,
+      panel_make: document.getElementById('edit-panel-make').value.trim() || null,
+      oc_ef_relay_type: document.getElementById('edit-relay-type').value.trim() || null,
+      vcb_status: document.getElementById('edit-vcb-status').value || null,
+    },
+  };
+  const res = await apiFetch(`/api/v1/feeders/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  if (!res || !res.ok) {
+    const d = res ? await res.json().catch(() => ({})) : {};
+    toast(d.error || 'Failed to save feeder', 'error');
+    return;
+  }
+  closeFeederModal();
+  toast('Feeder updated', 'success');
+  loadSubstationInfo();
+  loadSLD();
+}
+
+async function deleteFeeder(id) {
+  const feeder = feedersById[id];
+  if (!confirm(`Delete feeder ${feeder?.name || ''}?`)) return;
+  const res = await apiFetch(`/api/v1/feeders/${id}`, { method: 'DELETE' });
+  if (!res || !res.ok) {
+    const d = res ? await res.json().catch(() => ({})) : {};
+    toast(d.error || 'Failed to delete feeder', 'error');
+    return;
+  }
+  toast('Feeder deleted', 'success');
+  loadSubstationInfo();
+  loadSLD();
 }
 
 if (!Auth.isLoggedIn()) Auth.redirect();

@@ -51,6 +51,15 @@ def test_resolve_feeder_type_falls_back_to_heuristic_when_column_blank():
     assert _resolve_feeder_type("Spare", None, "33kV") == "incoming_33kv"
 
 
+def test_resolve_feeder_type_reclassifies_33kv_outgoing_feeder_as_lilo():
+    # "Outgoing Feeder" at 33kV is a LILO tap off the 33kV bus, not an 11kV feeder
+    assert _resolve_feeder_type("Kelvin", "Outgoing Feeder", "33kV") == "lilo_33kv"
+
+
+def test_resolve_feeder_type_keeps_11kv_outgoing_feeder_unchanged():
+    assert _resolve_feeder_type("Some Feeder", "Outgoing Feeder", "11kV") == "outgoing_11kv"
+
+
 # ── _norm_enum ─────────────────────────────────────────────────────────────
 
 def test_norm_enum_snaps_known_casing_variants_to_canonical():
@@ -142,6 +151,15 @@ def test_import_marks_bus_coupler_rows_correctly(imported):
     db, summary = imported
     coupler_feeders = [f for f in db.feeders.docs if f["feeder_type"] == "bus_coupler"]
     assert len(coupler_feeders) == 36
+
+
+def test_import_splits_33kv_outgoing_feeders_into_lilo(imported):
+    db, summary = imported
+    lilo = [f for f in db.feeders.docs if f["feeder_type"] == "lilo_33kv"]
+    outgoing_11kv = [f for f in db.feeders.docs if f["feeder_type"] == "outgoing_11kv"]
+    assert len(lilo) == 35
+    assert len(outgoing_11kv) == 213
+    assert all(f["voltage_kv"] == 33 for f in lilo)
 
 
 def test_import_populates_pt_fields(imported):

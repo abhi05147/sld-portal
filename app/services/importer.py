@@ -118,14 +118,19 @@ def _classify_feeder(name, voltage_str):
 
 def _resolve_feeder_type(name, raw_type, voltage):
     """Bus-coupler name always wins (source data mislabels these); else the
-    explicit Feeder Type column; else fall back to the name/voltage heuristic."""
+    explicit Feeder Type column; else fall back to the name/voltage heuristic.
+    An "Outgoing Feeder" at 33kV is a LILO tap off the 33kV bus, not an
+    11kV consumer feeder, so it gets reclassified."""
     if name and "coupler" in name.lower():
         return "bus_coupler"
     if raw_type:
         mapped = FEEDER_TYPE_MAP.get(str(raw_type).strip().lower())
-        if mapped:
-            return mapped
-    return _classify_feeder(name, voltage)
+        ftype = mapped if mapped else _classify_feeder(name, voltage)
+    else:
+        ftype = _classify_feeder(name, voltage)
+    if ftype == "outgoing_11kv" and "33" in str(voltage or "").lower():
+        return "lilo_33kv"
+    return ftype
 
 
 def _safe_float(v):

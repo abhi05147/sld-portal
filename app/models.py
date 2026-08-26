@@ -47,6 +47,7 @@ def substation_doc(
             "has_bus_coupler": False,
             "incoming_33kv_count": 0,
             "outgoing_11kv_count": 0,
+            "lilo_33kv_count": 0,
         },
         "created_at": utcnow(),
         "updated_at": utcnow(),
@@ -168,4 +169,5 @@ def infer_topology(feeders: list) -> dict:
         ),
         "incoming_33kv_count": len(incoming_33),
         "outgoing_11kv_count": len(outgoing_11),
+        "lilo_33kv_count": sum(1 for f in feeders if f["feeder_type"] == "lilo_33kv"),
     }
