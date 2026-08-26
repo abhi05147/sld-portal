@@ -87,7 +87,9 @@ def feeder_doc(substation_id, transformer_id=None, sequence=0,
         "meter": {
             "number": None, "make": None, "meter_type": None,
             "status": None, "ctr": None, "mf": None,
-            "ct_type": None, "ct_status": None, "dcu_status": None,
+            "ct_type": None, "ct_status": None,
+            "pt_type": None, "pt_status": None,
+            "dcu_status": None,
         },
         "switchgear": {
             "vcb_type": None, "panel_make": None, "vcb_status": None,

@@ -65,6 +65,7 @@ def _ensure_indexes():
     db.users.create_index("email",    unique=True)
     db.substations.create_index("name")
     db.substations.create_index("gss_primary")
+    db.substations.create_index([("name", 1), ("esd", 1), ("gss_primary", 1)])
     db.feeders.create_index("substation_id")
     db.feeders.create_index([("substation_id", 1), ("sequence", 1)])
     db.transformers.create_index([("substation_id", 1), ("sequence", 1)])

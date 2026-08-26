@@ -7,37 +7,9 @@ import openpyxl
 from openpyxl.styles import (
     Font, PatternFill, Alignment, Border, Side
 )
+from app.services.import_schema import FIELD_HEADERS
 
-HEADERS = [
-    # General
-    "SN", "Region", "Circle", "T&C", "ESD", "Substation Name",
-    "Latitude (DMS or decimal)", "Longitude (DMS or decimal)",
-    "SS Type (Conventional/Compact)",
-    # GSS
-    "Primary GSS (132/33kV)", "Alternate GSS",
-    "Tapping Info", "LILO Info",
-    # Transformer
-    "TR Capacity (MVA)", "TR Make", "TR YOM",
-    "TR Max Loading (MW)", "TR Max OTI (°C)", "TR Max WTI (°C)",
-    # Feeder
-    "Feeder Name", "Feeder Voltage (33kV/11kV)",
-    # Meter
-    "Meter No.", "Meter Make", "Meter Type (DLMS/Non-DLMS)",
-    "Meter Status", "CT Ratio (CTR)", "Meter Factor (MF)",
-    "CT Type", "CT Status", "DCU Status",
-    # Switchgear
-    "VCB Type (Indoor/Outdoor)", "Panel Make", "VCB Status",
-    "VCB Make", "VCB YOM",
-    "OC/EF Relay Type (Numerical/Electromechanical)",
-    "Differential Relay Type",
-    "OC/EF Relay Make", "Diff Relay Make",
-    "Diff Relay Status", "OC/EF Relay Status", "Aux Relay Status",
-    "Year Commissioned",
-    "Remarks",
-    # DC Supply
-    "Charger Status", "Charger Make", "Charger YOM",
-    "Battery Status", "Battery Type",
-]
+HEADERS = [header_text for _field_key, header_text in FIELD_HEADERS]
 
 SAMPLE_ROW = [
     # General
@@ -50,11 +22,13 @@ SAMPLE_ROW = [
     2.5, "BHEL", 2010,
     1.8, 75.0, 65.0,
     # Feeder (first feeder row for this substation)
-    "33kV Ulubari Incomer", "33kV",
+    "33kV Ulubari Incomer", "Substation Incomer", "33kV",
     # Meter
     "MTR001234", "L&T", "DLMS",
     "Working", "100/5A", 6000.0,
-    "Panel Mounted CT", "Working", "Working",
+    "Panel Mounted", "Working",
+    "Panel Mounted", "Working",
+    "Working",
     # Switchgear
     "Indoor", "Crompton Greaves", "Working",
     "CGL", 2012,
@@ -84,10 +58,10 @@ GROUP_COLORS = {
     range(1, 10):  CLR_HEADER_GENERAL,
     range(10, 14): CLR_HEADER_GSS,
     range(14, 20): CLR_HEADER_TR,
-    range(20, 22): CLR_HEADER_FEEDER,
-    range(22, 31): CLR_HEADER_METER,
-    range(31, 44): CLR_HEADER_SWG,
-    range(44, 50): CLR_HEADER_DC,
+    range(20, 23): CLR_HEADER_FEEDER,
+    range(23, 34): CLR_HEADER_METER,
+    range(34, 48): CLR_HEADER_SWG,
+    range(48, 53): CLR_HEADER_DC,
 }
 
 
@@ -142,24 +116,26 @@ def generate_template() -> bytes:
         [""],
         ["IMPORTANT RULES:"],
         ["1. Do NOT modify the header row (Row 1)."],
-        ["2. Delete the sample row (Row 2) before importing, or leave it — the system will skip rows with 'Sample' in the substation name."],
+        ["2. Delete the sample row (Row 2) before importing."],
         ["3. One row per FEEDER. Transformer and substation details repeat on the first feeder row of each substation block."],
         ["4. Leave cells blank (not zero) when data is not available."],
         ["5. Latitude/Longitude can be decimal (26.1839) or DMS format (26° 11' 2.09\"N)."],
         ["6. Feeder Voltage must be '33kV' or '11kV' exactly."],
-        ["7. VCB Type: use 'Indoor' or 'Outdoor'."],
-        ["8. Meter Type: use 'DLMS' or 'Non-DLMS'."],
-        ["9. For autorecloser feeders: set VCB Make to 'TAVRIDA' or 'NOJA' — the system will detect and render the AR symbol automatically."],
-        ["10. Bus coupler rows: set Feeder Name to 'Bus Coupler' — it will be inferred into topology and NOT stored as a feeder row."],
+        ["7. Feeder Type: use 'Substation Incomer', 'Transformer Incomer', 'Transformer Outgoing' or 'Outgoing Feeder'."],
+        ["8. VCB Type: use 'Indoor' or 'Outdoor' (or 'Autorecloser' — see rule 11)."],
+        ["9. Meter Type: use 'DLMS' or 'Non-DLMS'."],
+        ["10. Substations are matched by Substation Name + ESD + Primary GSS together. If two substations share a name, make sure their ESD or Primary GSS differs so they don't get merged."],
+        ["11. For autorecloser feeders: set VCB Type to 'Autorecloser' — the system will detect and render the AR symbol automatically."],
+        ["12. Bus coupler rows: set Feeder Name to 'Bus Coupler' (Feeder Type is ignored for these rows — they are always classified as a bus coupler and shown in the topology, not as a regular feeder)."],
         [""],
         ["COLUMN GROUPS (colour coded):"],
         ["Dark Blue (cols 1-9)  — General substation details"],
         ["Purple (cols 10-13)   — GSS connectivity"],
         ["Dark Red (cols 14-19) — Power transformer details (repeat for each transformer)"],
-        ["Blue (cols 20-21)     — Feeder name and voltage"],
-        ["Green (cols 22-30)    — Meter and CT details"],
-        ["Amber (cols 31-43)    — Switchgear and protection relay details"],
-        ["Teal (cols 44-49)     — DC supply (battery charger and battery bank)"],
+        ["Blue (cols 20-22)     — Feeder name, type and voltage"],
+        ["Green (cols 23-33)    — Meter, CT and PT details"],
+        ["Amber (cols 34-47)    — Switchgear and protection relay details"],
+        ["Teal (cols 48-52)     — DC supply (battery charger and battery bank)"],
     ]
     for i, row in enumerate(instructions, 1):
         cell = ws2.cell(row=i, column=1, value=row[0])
