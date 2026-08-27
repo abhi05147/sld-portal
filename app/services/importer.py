@@ -116,20 +116,27 @@ def _classify_feeder(name, voltage_str):
     return "outgoing_11kv"
 
 
+_STATION_KEYWORDS = ("station", "auxiliary", " aux", "aux ")
+
+
 def _resolve_feeder_type(name, raw_type, voltage):
-    """Bus-coupler name always wins (source data mislabels these); else the
-    explicit Feeder Type column; else fall back to the name/voltage heuristic.
-    An "Outgoing Feeder" at 33kV is a LILO tap off the 33kV bus, not an
-    11kV consumer feeder, so it gets reclassified."""
-    if name and "coupler" in name.lower():
+    """Name-based overrides win over the (often mislabelled) Feeder Type column:
+    a "coupler" name is always a bus coupler; a "station"/"auxiliary" name is
+    always the station transformer. Otherwise use the mapped Feeder Type column,
+    else the name/voltage heuristic. An "Outgoing Feeder" at 33 kV is a full
+    33 kV bay, not an 11 kV consumer feeder."""
+    lname = (name or "").lower()
+    if name and "coupler" in lname:
         return "bus_coupler"
+    if name and (lname.startswith("aux") or any(k in lname for k in _STATION_KEYWORDS)):
+        return "station_transformer"
     if raw_type:
         mapped = FEEDER_TYPE_MAP.get(str(raw_type).strip().lower())
         ftype = mapped if mapped else _classify_feeder(name, voltage)
     else:
         ftype = _classify_feeder(name, voltage)
     if ftype == "outgoing_11kv" and "33" in str(voltage or "").lower():
-        return "lilo_33kv"
+        return "outgoing_33kv"
     return ftype
 
 

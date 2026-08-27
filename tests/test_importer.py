@@ -51,9 +51,20 @@ def test_resolve_feeder_type_falls_back_to_heuristic_when_column_blank():
     assert _resolve_feeder_type("Spare", None, "33kV") == "incoming_33kv"
 
 
-def test_resolve_feeder_type_reclassifies_33kv_outgoing_feeder_as_lilo():
-    # "Outgoing Feeder" at 33kV is a LILO tap off the 33kV bus, not an 11kV feeder
-    assert _resolve_feeder_type("Kelvin", "Outgoing Feeder", "33kV") == "lilo_33kv"
+def test_resolve_feeder_type_reclassifies_33kv_outgoing_feeder_as_outgoing_33kv():
+    # "Outgoing Feeder" at 33kV is a full 33kV bay off the 33kV bus, not an 11kV feeder
+    assert _resolve_feeder_type("Chandmari", "Outgoing Feeder", "33kV") == "outgoing_33kv"
+
+
+def test_resolve_feeder_type_detects_station_transformer_by_name():
+    # Source data often labels the station TR row as a plain outgoing feeder
+    assert _resolve_feeder_type("33kV Station Tr", "Outgoing Feeder", "33kV") == "station_transformer"
+    assert _resolve_feeder_type("Auxiliary Transformer", None, "33kV") == "station_transformer"
+
+
+def test_resolve_feeder_type_station_name_does_not_shadow_bus_coupler():
+    # "coupler" override still runs first
+    assert _resolve_feeder_type("Station Bus Coupler", "Outgoing Feeder", "11kV") == "bus_coupler"
 
 
 def test_resolve_feeder_type_keeps_11kv_outgoing_feeder_unchanged():
@@ -153,13 +164,13 @@ def test_import_marks_bus_coupler_rows_correctly(imported):
     assert len(coupler_feeders) == 36
 
 
-def test_import_splits_33kv_outgoing_feeders_into_lilo(imported):
+def test_import_splits_33kv_outgoing_feeders_into_outgoing_33kv(imported):
     db, summary = imported
-    lilo = [f for f in db.feeders.docs if f["feeder_type"] == "lilo_33kv"]
+    og33 = [f for f in db.feeders.docs if f["feeder_type"] == "outgoing_33kv"]
     outgoing_11kv = [f for f in db.feeders.docs if f["feeder_type"] == "outgoing_11kv"]
-    assert len(lilo) == 35
-    assert len(outgoing_11kv) == 213
-    assert all(f["voltage_kv"] == 33 for f in lilo)
+    assert len(og33) == 33
+    assert len(outgoing_11kv) == 208
+    assert all(f["voltage_kv"] == 33 for f in og33)
 
 
 def test_import_populates_pt_fields(imported):
