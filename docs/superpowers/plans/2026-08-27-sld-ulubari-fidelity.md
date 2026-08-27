@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Python 3.11; run tests with `.venv/bin/python -m pytest` (venv pytest is 8.3.3; a global 8.2.2 also exists — always use the venv one).
+- Python 3.11; run tests with `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest` run from the worktree root (that shared venv is the project env; the worktree has no local `.venv`). A bare `pytest` picks up an unrelated global 8.2.2 — always use the full path above.
 - No ORM. Documents are plain dicts built by factory functions in `app/models.py`.
 - `feeder_type` vocabulary after this change: `incoming_33kv`, `outgoing_33kv`, `transformer_hv`, `station_transformer`, `incomer_11kv`, `outgoing_11kv`, `bus_coupler`. `lilo_33kv` is retired — it must not appear anywhere in `app/` after Task 8.
 - Colour scheme is fixed: 33 kV `#CC2200`, 11 kV `#0055CC`, bus `#111111`, earth `#006600`.
@@ -127,7 +127,7 @@ def test_infer_topology_flags_station_transformer():
 
 - [ ] **Step 2: Run the tests, verify they fail**
 
-Run: `.venv/bin/python -m pytest tests/test_models.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_models.py -v`
 Expected: FAIL — `KeyError` on the new keys / assertion errors.
 
 - [ ] **Step 3: Rewrite `infer_topology`**
@@ -201,7 +201,7 @@ In `app/models.py`, `substation_doc()` seeds a `"topology"` dict (lines ~43-51) 
 
 - [ ] **Step 6: Run the tests, verify they pass**
 
-Run: `.venv/bin/python -m pytest tests/test_models.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_models.py -v`
 Expected: PASS (6 tests).
 
 - [ ] **Step 7: Commit**
@@ -263,7 +263,7 @@ skipped unless the sample xlsx exists, so the counts are not verified here — l
 
 - [ ] **Step 3: Run the tests, verify they fail**
 
-Run: `.venv/bin/python -m pytest tests/test_importer.py -k resolve_feeder_type -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_importer.py -k resolve_feeder_type -v`
 Expected: FAIL — `outgoing_33kv` / `station_transformer` not returned.
 
 - [ ] **Step 4: Update `_resolve_feeder_type`**
@@ -297,7 +297,7 @@ def _resolve_feeder_type(name, raw_type, voltage):
 
 - [ ] **Step 5: Run the tests, verify they pass**
 
-Run: `.venv/bin/python -m pytest tests/test_importer.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_importer.py -v`
 Expected: PASS (integration tests `skip` if the sample xlsx is absent; unit tests pass).
 
 - [ ] **Step 6: Update the template import-notes**
@@ -314,7 +314,7 @@ replace it plus add item 13:
 
 - [ ] **Step 7: Run the template round-trip test**
 
-Run: `.venv/bin/python -m pytest tests/test_importer.py::test_generated_template_imports_cleanly -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_importer.py::test_generated_template_imports_cleanly -v`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -417,7 +417,7 @@ def test_sym_bus_coupler_horizontal_has_breaker_and_isolators():
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -v`
 Expected: FAIL — `AttributeError: module ... has no attribute 'RATINGS'` etc.
 
 - [ ] **Step 3: Add `RATINGS` and the three helpers**
@@ -482,7 +482,7 @@ def sym_bus_coupler_horizontal(x, y, color="#333333"):
 
 - [ ] **Step 4: Run, verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -v`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit**
@@ -611,7 +611,7 @@ def test_layout_transformer_bay_never_reaches_11kv_band():
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
 Expected: FAIL — `AttributeError: 'SLDGenerator' object has no attribute '_layout'`.
 
 - [ ] **Step 3: Add dataclasses, constants and `_layout`**
@@ -838,7 +838,7 @@ Then add these methods to `class SLDGenerator` (above the existing `generate`):
 
 - [ ] **Step 4: Run, verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
 Expected: PASS (3 layout tests + earlier symbol tests still pass).
 
 - [ ] **Step 5: Commit**
@@ -918,7 +918,7 @@ def test_layout_ocef_marker_only_when_relay_data_present():
 
 - [ ] **Step 2: Run**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
 Expected: PASS. If any fail, adjust `_layout` bay ordering / `_bay_33kv` equipment list to match, then re-run.
 
 - [ ] **Step 3: Commit**
@@ -1002,7 +1002,7 @@ def test_layout_33kv_coupler_two_segments_and_split_bays():
 
 - [ ] **Step 2: Run, verify the two-segment test fails**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k "33kv_coupler" -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k "33kv_coupler" -v`
 Expected: FAIL — still one segment.
 
 - [ ] **Step 3: Add the coupler branch to `_layout`**
@@ -1033,7 +1033,7 @@ with:
 
 - [ ] **Step 4: Run, verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k layout -v`
 Expected: PASS (all layout tests).
 
 - [ ] **Step 5: Commit**
@@ -1110,7 +1110,7 @@ def test_layout_more_coupler_records_than_gaps_are_ignored():
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k "11kv_coupler or isolated or coupler_records" -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k "11kv_coupler or isolated or coupler_records" -v`
 Expected: FAIL — `couplers11` is empty.
 
 - [ ] **Step 3: Populate `couplers11` in `_layout`**
@@ -1129,7 +1129,7 @@ and change the `return` to pass `couplers11=couplers11` instead of `couplers11=[
 
 - [ ] **Step 4: Run, verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -v`
 Expected: PASS (all tests so far).
 
 - [ ] **Step 5: Commit**
@@ -1209,7 +1209,7 @@ def test_generate_single_transformer_still_renders():
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k "smoke or missing_substation or single_transformer_still" -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k "smoke or missing_substation or single_transformer_still" -v`
 Expected: FAIL — current `generate` still routes to the old renderers using the removed
 `bus_config` values / old topology keys.
 
@@ -1369,7 +1369,7 @@ add this branch near the top of `_render_bay_33kv` (before the generic bay code)
 
 - [ ] **Step 4: Run the full generator test file**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -v`
 Expected: PASS (all). If a smoke assertion about a specific feeder name fails, it means a bay
 isn't rendered — trace which loop skipped it and fix `_render`.
 
@@ -1438,7 +1438,7 @@ def test_render_includes_legend_text():
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -k "legend" -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -k "legend" -v`
 Expected: FAIL — `scene.legend is None`.
 
 - [ ] **Step 3: Build the legend in `_layout`**
@@ -1492,7 +1492,7 @@ Replace the stub:
 
 - [ ] **Step 5: Run the full file**
 
-Run: `.venv/bin/python -m pytest tests/test_sld_generator.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_sld_generator.py -v`
 Expected: PASS (all).
 
 - [ ] **Step 6: Commit**
@@ -1526,8 +1526,8 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Install svglib into the venv**
 
-Run: `.venv/bin/python -m pip install "svglib==1.5.1"`
-Then: `.venv/bin/python -c "from svglib.svglib import svg2rlg; print('ok')"`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pip install "svglib==1.5.1"`
+Then: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -c "from svglib.svglib import svg2rlg; print('ok')"`
 Expected: `ok`.
 
 - [ ] **Step 2: Write the failing tests**
@@ -1601,7 +1601,7 @@ def test_generate_with_no_svg_still_produces_pdf():
 
 - [ ] **Step 3: Run, verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_pdf_generator.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_pdf_generator.py -v`
 Expected: `test_generate_with_valid_svg_produces_pdf_bytes` FAILS — the current `generate`
 returns a PDF but with **no** snapshot page (the test as written only checks `%PDF`, so it
 actually passes today). Before writing code, strengthen that test to prove the page exists:
@@ -1694,12 +1694,12 @@ except Exception:                     # pragma: no cover
 
 - [ ] **Step 5: Run, verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_pdf_generator.py -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/test_pdf_generator.py -v`
 Expected: PASS (3 tests).
 
 - [ ] **Step 6: Confirm the route still works end-to-end (smoke)**
 
-Run: `.venv/bin/python -m pytest tests/ -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest tests/ -v`
 Expected: PASS (all suites; importer integration tests may `skip`).
 
 - [ ] **Step 7: Commit**
@@ -1759,7 +1759,7 @@ Leave the `num_transformers` and `incoming_33kv_count` rows unchanged; keep the
 
 - [ ] **Step 4: Manual verification**
 
-Start the app (`.venv/bin/python run.py`), open a substation SLD page. Confirm:
+Start the app (`/Users/abhijitdas/Projects/sld_app/.venv/bin/python run.py`), open a substation SLD page. Confirm:
 the SLD image shows the new title block + legend; the topology panel shows the new rows with
 no `undefined`; opening the feeder-edit modal shows "33kV Outgoing" in the type dropdown.
 (If no DB data is available, at minimum confirm the page renders without a JS console error.)
@@ -1782,7 +1782,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Run the entire test suite**
 
-Run: `.venv/bin/python -m pytest -v`
+Run: `/Users/abhijitdas/Projects/sld_app/.venv/bin/python -m pytest -v`
 Expected: PASS. Importer integration tests that need `~/Downloads/GEC - I substation master
 data compiled.xlsx` may `SKIP` — that is acceptable. No `FAIL`, no `ERROR`.
 
