@@ -12,6 +12,15 @@ from bson import ObjectId
 
 AR_KEYWORDS = {"autorecloser", "auto recloser", "tavrida", "noja", "schneider ar"}
 
+RATINGS = {
+    "vcb_33": "1250A, 25kA",
+    "vcb_11": "1250A, 25kA",
+    "iso_33": "630A, 25kA",
+    "iso_11": "630A, 25kA",
+    "la":     "30kV, 10kA",
+    "ct":     "400/5A",
+}
+
 def is_autorecloser(feeder: dict) -> bool:
     if feeder.get("is_autorecloser"):
         return True
@@ -190,6 +199,47 @@ def sym_bus_coupler_vertical(x, y_bus1, y_bus2, color="#333333"):
     </g>
     <!-- Iso2 to Bus2 -->
     <line x1="18" y1="{int(iso2_y)+18}" x2="18" y2="{y_bus2}" stroke="{color}" stroke-width="2"/>
+  </g>"""
+
+
+def sym_station_transformer(x, y, label="Station Tr"):
+    lines = label.split("\n")
+    text_els = "".join(
+        f'<tspan x="20" dy="{0 if i == 0 else 11}" font-size="8">{ln}</tspan>'
+        for i, ln in enumerate(lines)
+    )
+    return f"""<g class="sym-stn-tr" transform="translate({x},{y})">
+    <line x1="0" y1="-20" x2="0" y2="-10" stroke="#CC2200" stroke-width="2"/>
+    <circle cx="0" cy="0" r="10" fill="white" stroke="#CC2200" stroke-width="2"/>
+    <circle cx="0" cy="12" r="10" fill="white" stroke="#888" stroke-width="1.8"/>
+    <line x1="0" y1="22" x2="0" y2="28" stroke="#006600" stroke-width="2"/>
+    <line x1="-7" y1="28" x2="7" y2="28" stroke="#006600" stroke-width="2"/>
+    <line x1="-4" y1="32" x2="4" y2="32" stroke="#006600" stroke-width="1.4"/>
+    <text font-weight="600" fill="#333" y="-4">{text_els}</text>
+  </g>"""
+
+
+def sym_ocef_marker(x, y):
+    return f"""<g class="sym-ocef" transform="translate({x},{y})">
+    <rect x="-2" y="-6" width="18" height="12" fill="white" stroke="#888" stroke-width="1"/>
+    <text x="7" y="3" text-anchor="middle" font-size="6.5" fill="#666">OC/EF</text>
+    <text x="24" y="3" font-size="7" fill="#888">TVM</text>
+  </g>"""
+
+
+def sym_bus_coupler_horizontal(x, y, color="#333333"):
+    """Short horizontal break in a bus: Iso - VCB - Iso, centred on x at height y."""
+    return f"""<g class="sym-bc-h" transform="translate({x},{y})">
+    <line x1="-34" y1="0" x2="-22" y2="0" stroke="{color}" stroke-width="2"/>
+    <line x1="-22" y1="0" x2="-10" y2="-9" stroke="{color}" stroke-width="1.8"/>
+    <circle cx="-22" cy="0" r="2.2" fill="{color}"/>
+    <rect x="-10" y="-9" width="20" height="18" fill="white" stroke="{color}" stroke-width="2" rx="1"/>
+    <line x1="-7" y1="-6" x2="7" y2="6" stroke="{color}" stroke-width="1.4"/>
+    <line x1="7" y1="-6" x2="-7" y2="6" stroke="{color}" stroke-width="1.4"/>
+    <line x1="10" y1="-9" x2="22" y2="0" stroke="{color}" stroke-width="1.8"/>
+    <circle cx="22" cy="0" r="2.2" fill="{color}"/>
+    <line x1="22" y1="0" x2="34" y2="0" stroke="{color}" stroke-width="2"/>
+    <text x="0" y="22" text-anchor="middle" font-size="8" fill="{color}" font-weight="700">BUS COUPLER</text>
   </g>"""
 
 
