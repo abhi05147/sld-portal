@@ -43,11 +43,13 @@ def substation_doc(
         "topology": {
             "bus_config": "single_bus",          # updated by infer_topology()
             "num_transformers": 0,
+            "num_11kv_sections": 0,
+            "has_11kv_bus_coupler": False,
+            "has_33kv_bus_coupler": False,
             "has_station_transformer": False,
-            "has_bus_coupler": False,
             "incoming_33kv_count": 0,
+            "outgoing_33kv_count": 0,
             "outgoing_11kv_count": 0,
-            "lilo_33kv_count": 0,
         },
         "created_at": utcnow(),
         "updated_at": utcnow(),
@@ -74,7 +76,8 @@ def transformer_doc(substation_id, sequence, capacity_mva, make, yom,
 
 
 # ── Feeder ────────────────────────────────────────────────────────────────────
-# feeder_type: "incoming_33kv" | "transformer_hv" | "incomer_11kv" | "outgoing_11kv" | "bus_coupler"
+# feeder_type: "incoming_33kv" | "outgoing_33kv" | "transformer_hv" | "station_transformer"
+#            | "incomer_11kv" | "outgoing_11kv" | "bus_coupler"
 
 def feeder_doc(substation_id, transformer_id=None, sequence=0,
                name="", voltage_kv=11, feeder_type="outgoing_11kv") -> dict:
@@ -143,31 +146,37 @@ def audit_log_doc(user_id, action, target_collection=None,
 # ── Topology inference ────────────────────────────────────────────────────────
 
 def infer_topology(feeders: list) -> dict:
-    """Derive bus configuration from feeder list."""
-    incoming_33 = [f for f in feeders if f["feeder_type"] == "incoming_33kv"]
-    outgoing_11 = [f for f in feeders if f["feeder_type"] == "outgoing_11kv"]
-    transformers = [f for f in feeders if f["feeder_type"] == "transformer_hv"]
-    has_coupler = any(f["feeder_type"] == "bus_coupler" for f in feeders)
-    num_tr = len(transformers)
+    """Derive bus configuration from the feeder list.
 
-    if num_tr >= 2 and has_coupler:
-        bus_config = "double_bus_coupler"
-    elif num_tr >= 2:
-        bus_config = "double_bus"
-    elif len(incoming_33) > 1:
-        bus_config = "ring_main"
+    A `bus_coupler` feeder with voltage_kv == 33 is a 33 kV coupler; any other
+    `bus_coupler` (voltage_kv 11 or absent) is an 11 kV coupler.
+    """
+    def _is(ft):
+        return [f for f in feeders if f.get("feeder_type") == ft]
+
+    couplers      = _is("bus_coupler")
+    has_33_bc     = any(f.get("voltage_kv") == 33 for f in couplers)
+    has_11_bc     = any(f.get("voltage_kv") != 33 for f in couplers)
+    num_tr        = len(_is("transformer_hv"))
+    num_sections  = max(num_tr, 1)
+
+    if has_33_bc and has_11_bc:
+        bus_config = "sectionalized_both"
+    elif has_33_bc:
+        bus_config = "sectionalized_33kv"
+    elif has_11_bc:
+        bus_config = "sectionalized_11kv"
     else:
         bus_config = "single_bus"
 
     return {
         "bus_config": bus_config,
         "num_transformers": num_tr,
-        "has_bus_coupler": has_coupler,
-        "has_station_transformer": any(
-            "station" in f["name"].lower() or "auxiliary" in f["name"].lower()
-            for f in feeders
-        ),
-        "incoming_33kv_count": len(incoming_33),
-        "outgoing_11kv_count": len(outgoing_11),
-        "lilo_33kv_count": sum(1 for f in feeders if f["feeder_type"] == "lilo_33kv"),
+        "num_11kv_sections": num_sections,
+        "has_11kv_bus_coupler": has_11_bc,
+        "has_33kv_bus_coupler": has_33_bc,
+        "has_station_transformer": bool(_is("station_transformer")),
+        "incoming_33kv_count": len(_is("incoming_33kv")),
+        "outgoing_33kv_count": len(_is("outgoing_33kv")),
+        "outgoing_11kv_count": len(_is("outgoing_11kv")),
     }
