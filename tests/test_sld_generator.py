@@ -1,7 +1,12 @@
 """SLD generator tests — symbol helpers, then _layout Scene structure, then
-render smoke tests. Uses in-memory fakes; no MongoDB."""
+render smoke tests. Uses in-memory fakes; no MongoDB.
+
+`xml.etree.ElementTree` is used only to parse SVG this module just generated
+(trusted, no DTD/entities), so the stdlib parser is fine here; `defusedxml` is
+not a dependency of this project.
+"""
 import re
-import pytest
+import xml.etree.ElementTree as ET
 from bson import ObjectId
 
 from app.services import sld_generator as G
@@ -137,13 +142,20 @@ def test_layout_unassigned_11kv_feeders_round_robin_across_sections():
 
 
 def test_layout_transformer_bay_never_reaches_11kv_band():
+    """B4: the transformer symbol lives strictly above the 11 kV bus, and its
+    bay sits inside its own 11 kV section (ties this to B3)."""
     ss = _ss()
     t1 = _tr(ss, 1)
     feeders = [_fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
                _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1)]
     _, _, scene = _build(ss, feeders, [t1])
     tr_bay = next(b for b in scene.bays33 if b.kind == "transformer")
-    assert tr_bay.x == scene.sections11[0].bus[0] or tr_bay.x >= G.LAYOUT["MARGIN"]
+    x0, x1, _y = scene.sections11[0].bus
+    # bay is horizontally inside its section...
+    assert x0 <= tr_bay.x <= x1
+    # ...and the transformer symbol's lowest drawn point clears the 11 kV bus.
+    tr_symbol_bottom = G.Y["tr_top"] + 78 + 52      # sym_transformer earth tail
+    assert tr_symbol_bottom < G.Y["bus11"]
     assert G.Y["tr_bot"] < G.Y["bus11"]
 
 
@@ -237,9 +249,15 @@ def test_layout_33kv_coupler_two_segments_and_split_bays():
     seg1 = [b for b in scene.bays33 if b.kind != "bus_pt_33" and b.segment == 1]
     assert len(seg0) >= 1 and len(seg1) >= 1
     assert abs(len(seg0) - len(seg1)) <= 1
-    # segments are contiguous and meet at coupler_x
+    # B4: neither segment may overshoot the coupler — the break is real.
+    cx = scene.bus33.coupler_x
     (a0, a1), (b0, b1) = scene.bus33.segments
-    assert a1 <= scene.bus33.coupler_x <= b0 or a1 == b0
+    assert a0 < a1 < cx < b0 < b1
+    assert a1 <= cx - G.COUPLER_HALF_W
+    assert b0 >= cx + G.COUPLER_HALF_W
+    # every left-segment bay lands on the left segment, likewise on the right
+    assert all(a0 <= b.x <= a1 for b in seg0)
+    assert all(b0 <= b.x <= b1 for b in seg1)
 
 
 # ── _layout: 11 kV bus couplers ─────────────────────────────────────────
@@ -330,6 +348,134 @@ def test_layout_builds_legend_with_twelve_entries():
     names = {e.name for e in scene.legend.entries}
     assert {"Vacuum Circuit Breaker", "Bus Coupler", "OC/EF TVM", "Earth"} <= names
     assert scene.height == G.Y["legend"] + scene.legend.h + G.LAYOUT["MARGIN"]
+
+
+def test_legend_entries_render_real_glyphs_not_placeholder_boxes():
+    """A6: every legend entry must draw its own symbol, not an identical box."""
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    db = FakeDB(substations=[ss],
+                feeders=[_fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+                         _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1)],
+                transformers=[t1])
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+    root = ET.fromstring(svg)
+    legend_g = _legend_group(root)
+    classes = {g.get("class") for g in legend_g.iter("{http://www.w3.org/2000/svg}g")}
+    for cls in ("sym-la", "sym-iso", "sym-vcb", "sym-ar", "sym-ct", "sym-pt",
+                "sym-tr", "sym-stn-tr", "sym-bc-h", "sym-bus", "sym-earth",
+                "sym-ocef"):
+        assert cls in classes, f"legend is missing a {cls} glyph"
+
+
+# ── B1: XML well-formedness + escaping ──────────────────────────────────
+SVG_NS = "{http://www.w3.org/2000/svg}"
+
+
+def _all_text(root):
+    return "".join(t for t in root.itertext())
+
+
+def _legend_group(root):
+    for g in root.iter(SVG_NS + "g"):
+        for t in g.findall(SVG_NS + "text"):
+            if (t.text or "").strip() == "LEGEND":
+                return g
+    raise AssertionError("legend group not found")
+
+
+def test_generated_svg_is_well_formed_xml():
+    ss = _ss(bus_config="sectionalized_both")
+    trs = [_tr(ss, 1), _tr(ss, 2), _tr(ss, 3)]
+    db = FakeDB(substations=[ss], feeders=_ulubari_feeders(ss, trs), transformers=trs)
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+    ET.fromstring(svg)          # must not raise
+
+
+def test_generated_svg_escapes_user_supplied_text():
+    ss = _ss(name="R&B <Nagar>")
+    t1 = _tr(ss, 1)
+    feeders = [
+        _fd(ss, 1, "R&B Colony & <Test>", "outgoing_11kv", 11, tr=t1),
+        _fd(ss, 2, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 3, '</text><script>alert(1)</script>', "outgoing_33kv", 33),
+    ]
+    db = FakeDB(substations=[ss], feeders=feeders, transformers=[t1])
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+
+    root = ET.fromstring(svg)   # must not raise
+    text = _all_text(root)
+    assert "R&B Colony" in text
+    assert "R&B <NAGAR>" in text.upper()
+    # the injected markup survives only as inert text, never as an element
+    assert root.find(".//{http://www.w3.org/2000/svg}script") is None
+    assert "<script>" not in svg
+
+
+def test_error_svg_escapes_message():
+    ET.fromstring(SLDGenerator(FakeDB())._error_svg("bad & worse"))
+
+
+# ── B2: legend clearance below the rotated feeder labels ────────────────
+def test_legend_band_clears_the_rotated_feeder_label_band():
+    assert G.FEEDER_LABEL_BAND > 0
+    assert G.Y["legend"] >= G.Y["feed_bot"] + G.FEEDER_LABEL_BAND
+
+
+def test_no_feeder_label_is_painted_over_by_the_legend():
+    ss = _ss(bus_config="sectionalized_both")
+    trs = [_tr(ss, 1), _tr(ss, 2), _tr(ss, 3)]
+    feeders = _ulubari_feeders(ss, trs)
+    db = FakeDB(substations=[ss], feeders=feeders, transformers=trs)
+    gen = SLDGenerator(db)
+    scene = gen._layout(ss, feeders, trs)
+    svg = gen.generate(str(ss["_id"]))
+    root = ET.fromstring(svg)
+
+    legend_top = scene.legend.y
+    assert legend_top + scene.legend.h <= scene.height
+
+    groups = [g for g in root.iter(SVG_NS + "g") if g.get("class") == "sym-feeder"]
+    assert len(groups) == 6            # every 11 kV outgoing feeder
+    for g in groups:
+        m = re.match(r"translate\(([-\d.]+),([-\d.]+)\)", g.get("transform", ""))
+        assert m, g.get("transform")
+        ty = float(m.group(2))
+        # the whole rotated-label band must sit above the legend rect
+        assert ty + G.FEEDER_LABEL_BAND <= legend_top
+
+
+# ── B3: transformer bay ↔ 11 kV section alignment ───────────────────────
+def test_transformer_bay_x_is_inside_its_own_11kv_section():
+    ss = _ss(bus_config="sectionalized_both")
+    trs = [_tr(ss, 1), _tr(ss, 2), _tr(ss, 3)]
+    _, _, scene = _build(ss, _ulubari_feeders(ss, trs), trs)
+
+    tr_bays = [b for b in scene.bays33 if b.kind == "transformer"]
+    assert len(tr_bays) == len(scene.sections11) == 3
+    for i, (bay, sec) in enumerate(zip(tr_bays, scene.sections11)):
+        x0, x1, _y = sec.bus
+        assert x0 <= bay.x <= x1, f"transformer {i} at {bay.x} outside section {sec.bus}"
+        # the incomer bay is in series with the transformer: same x
+        assert sec.incomer_bay.x == bay.x
+
+
+def test_transformer_and_section_stay_aligned_for_a_single_transformer():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    feeders = [_fd(ss, 1, "33kV UG Incomer-1", "incoming_33kv", 33),
+               _fd(ss, 2, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+               _fd(ss, 3, "F1", "outgoing_11kv", 11, tr=t1),
+               _fd(ss, 4, "F2", "outgoing_11kv", 11, tr=t1)]
+    _, _, scene = _build(ss, feeders, [t1])
+    bay = next(b for b in scene.bays33 if b.kind == "transformer")
+    sec = scene.sections11[0]
+    assert sec.bus[0] <= bay.x <= sec.bus[1]
+    assert sec.incomer_bay.x == bay.x
+    # feeder bays stay on their own bus and never collide with the incomer riser
+    for fb in sec.feeder_bays:
+        assert sec.bus[0] <= fb.x <= sec.bus[1]
+        assert fb.x != sec.incomer_bay.x
 
 
 def test_render_includes_legend_text():
