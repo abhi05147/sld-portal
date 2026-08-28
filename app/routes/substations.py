@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 from app import mongo
 from app.models import substation_doc, audit_log_doc, utcnow
 from bson import ObjectId
+from app.routes.helpers import parse_object_id
 
 substations_bp = Blueprint("substations", __name__)
 
@@ -83,13 +84,22 @@ def update_substation(ss_id):
     err = _require_roles("admin", "engineer")
     if err:
         return err
+    substation_id, err = parse_object_id(ss_id, "substation ID")
+    if err:
+        return err
     data = request.get_json(silent=True) or {}
     allowed = {"name","region","circle","tnc","esd","type","gss_primary","gss_alternate","tapping_info","lilo_info"}
     update = {k: v for k, v in data.items() if k in allowed}
+    if "gps_lat" in data:
+        update["gps.lat"] = data.get("gps_lat")
+    if "gps_lon" in data:
+        update["gps.lon"] = data.get("gps_lon")
     if not update:
         return jsonify(error="No valid fields"), 400
     update["updated_at"] = utcnow()
-    mongo.db.substations.update_one({"_id": ObjectId(ss_id)}, {"$set": update})
+    result = mongo.db.substations.update_one({"_id": substation_id}, {"$set": update})
+    if result.matched_count == 0:
+        return jsonify(error="Substation not found"), 404
     mongo.db.audit_logs.insert_one(
         audit_log_doc(get_jwt_identity(), "update_substation", "substations", ss_id)
     )
@@ -102,9 +112,14 @@ def delete_substation(ss_id):
     err = _require_roles("admin")
     if err:
         return err
-    mongo.db.substations.delete_one({"_id": ObjectId(ss_id)})
-    mongo.db.feeders.delete_many({"substation_id": ObjectId(ss_id)})
-    mongo.db.transformers.delete_many({"substation_id": ObjectId(ss_id)})
+    substation_id, err = parse_object_id(ss_id, "substation ID")
+    if err:
+        return err
+    result = mongo.db.substations.delete_one({"_id": substation_id})
+    if result.deleted_count == 0:
+        return jsonify(error="Substation not found"), 404
+    mongo.db.feeders.delete_many({"substation_id": substation_id})
+    mongo.db.transformers.delete_many({"substation_id": substation_id})
     mongo.db.audit_logs.insert_one(
         audit_log_doc(get_jwt_identity(), "delete_substation", "substations", ss_id)
     )
