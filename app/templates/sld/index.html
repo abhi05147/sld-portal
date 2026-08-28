@@ -120,7 +120,7 @@
             <option value="transformer_hv">Transformer HV</option>
             <option value="incomer_11kv">11kV Incomer</option>
             <option value="outgoing_11kv">11kV Outgoing</option>
-            <option value="lilo_33kv">33kV LILO</option>
+            <option value="outgoing_33kv">33kV Outgoing</option>
             <option value="bus_coupler">Bus Coupler</option>
             <option value="station_transformer">Station Transformer</option>
           </select>
@@ -259,11 +259,11 @@ async function loadSubstationInfo() {
       <span style="color:var(--text-sub)">Bus Config</span>
       <span><span class="badge badge-11">${(topo.bus_config||'single_bus').replace('_',' ')}</span></span>
       <span style="color:var(--text-sub)">Transformers</span><span>${topo.num_transformers||0}</span>
-      <span style="color:var(--text-sub)">Bus Coupler</span><span>${topo.has_bus_coupler ? '✅ Yes' : 'No'}</span>
-      <span style="color:var(--text-sub)">Station TR</span><span>${topo.has_station_transformer ? '✅ Yes' : 'No'}</span>
+      <span style="color:var(--text-sub)">11 kV Sections</span><span>${topo.num_11kv_sections||0}</span>
+      <span style="color:var(--text-sub)">11 kV Bus Coupler</span><span>${topo.has_11kv_bus_coupler ? '✅ Yes' : 'No'}</span>
+      <span style="color:var(--text-sub)">33 kV Bus Coupler</span><span>${topo.has_33kv_bus_coupler ? '✅ Yes' : 'No'}</span>
+      <span style="color:var(--text-sub)">33 kV O/g Feeders</span><span style="color:var(--accent33);font-weight:600">${topo.outgoing_33kv_count||0}</span>
       <span style="color:var(--text-sub)">33kV Incomers</span><span style="color:var(--accent33);font-weight:600">${topo.incoming_33kv_count||0}</span>
-      <span style="color:var(--text-sub)">11kV Feeders</span><span style="color:var(--accent11);font-weight:600">${topo.outgoing_11kv_count||0}</span>
-      <span style="color:var(--text-sub)">33kV LILO Taps</span><span style="color:var(--accent33);font-weight:600">${topo.lilo_33kv_count||0}</span>
     </div>
   `;
 
@@ -295,7 +295,7 @@ async function loadSubstationInfo() {
       transformer_hv: '<span class="badge" style="background:rgba(120,0,200,.1);color:#7700cc">TR HV</span>',
       incomer_11kv: '<span class="badge badge-11">11kV IC</span>',
       outgoing_11kv: '<span class="badge badge-11">11kV OUT</span>',
-      lilo_33kv: '<span class="badge badge-33">33kV LILO</span>',
+      outgoing_33kv: '<span class="badge badge-33">33kV OUT</span>',
       bus_coupler: '<span class="badge badge-warn">BC</span>',
       station_transformer: '<span class="badge badge-ok">STN TR</span>',
     };
