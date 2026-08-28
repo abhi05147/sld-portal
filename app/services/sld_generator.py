@@ -383,7 +383,23 @@ class SLDGenerator:
         bus_pt = Bay(kind="bus_pt_33", x=width - M, label="33kV Bus PT", voltage_kv=33)
         bays33.append(bus_pt)
 
-        bus33 = Bus(y=Y["bus33"], segments=[(M, width - M)], coupler_x=None)
+        has_33_bc = any(f.get("voltage_kv") == 33 for f in by_type.get("bus_coupler", []))
+        non_pt = [b for b in bays33 if b.kind != "bus_pt_33"]
+        if has_33_bc and non_pt:
+            split = width // 2
+            left_n = (len(non_pt) + 1) // 2           # ceil
+            for j, b in enumerate(non_pt):
+                b.segment = 0 if j < left_n else 1
+            bus_pt.segment = 1
+            left_bays  = [b for b in non_pt if b.segment == 0]
+            right_bays = [b for b in non_pt if b.segment == 1]
+            l1 = max([b.x for b in left_bays], default=split - 40) + 30
+            r0 = min([b.x for b in right_bays], default=split + 40) - 30
+            bus33 = Bus(y=Y["bus33"],
+                        segments=[(M, min(l1, split - 10)), (max(r0, split + 10), width - M)],
+                        coupler_x=split)
+        else:
+            bus33 = Bus(y=Y["bus33"], segments=[(M, width - M)], coupler_x=None)
 
         # ---- 11 kV sections ----
         sections11 = []

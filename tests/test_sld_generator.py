@@ -191,3 +191,52 @@ def test_layout_ocef_marker_only_when_relay_data_present():
     b = next(b for b in scene.bays33 if b.label == "33kV B O/g")
     assert any(e.kind == "ocef" for e in a.equipment)
     assert not any(e.kind == "ocef" for e in b.equipment)
+
+
+# ── _layout: 33 kV bus coupler ──────────────────────────────────────────
+def _ulubari_feeders(ss, trs):
+    t1, t2, t3 = trs
+    return [
+        _fd(ss, 1, "33kV UG Incomer-1", "incoming_33kv", 33),
+        _fd(ss, 2, "33kV UG Incomer-2", "incoming_33kv", 33),
+        _fd(ss, 3, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 4, "Tr-2 HV", "transformer_hv", 33, tr=t2),
+        _fd(ss, 5, "Tr-3 HV", "transformer_hv", 33, tr=t3),
+        _fd(ss, 6, "33kV Chandmari O/g", "outgoing_33kv", 33),
+        _fd(ss, 7, "33kV Paltanbazar O/g", "outgoing_33kv", 33),
+        _fd(ss, 8, "33kV Kalapahar O/g", "outgoing_33kv", 33),
+        _fd(ss, 9, "100 kVA 33/0.4kV Station Tr", "station_transformer", 33),
+        _fd(ss, 10, "33kV Bus Coupler", "bus_coupler", 33),
+        _fd(ss, 11, "11kV Bus Coupler", "bus_coupler", 11),
+        _fd(ss, 12, "New Ulubari", "outgoing_11kv", 11, tr=t1),
+        _fd(ss, 13, "East", "outgoing_11kv", 11, tr=t1),
+        _fd(ss, 14, "Rehabari", "outgoing_11kv", 11, tr=t2),
+        _fd(ss, 15, "Gopinath", "outgoing_11kv", 11, tr=t2),
+        _fd(ss, 16, "South Surekha", "outgoing_11kv", 11, tr=t3),
+        _fd(ss, 17, "South", "outgoing_11kv", 11, tr=t3),
+    ]
+
+
+def test_layout_no_33kv_coupler_single_segment():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    _, _, scene = _build(ss, [_fd(ss, 1, "I1", "incoming_33kv", 33),
+                              _fd(ss, 2, "Tr-1 HV", "transformer_hv", 33, tr=t1)], [t1])
+    assert len(scene.bus33.segments) == 1
+    assert scene.bus33.coupler_x is None
+    assert all(b.segment == 0 for b in scene.bays33)
+
+
+def test_layout_33kv_coupler_two_segments_and_split_bays():
+    ss = _ss(bus_config="sectionalized_33kv")
+    trs = [_tr(ss, 1), _tr(ss, 2), _tr(ss, 3)]
+    _, _, scene = _build(ss, _ulubari_feeders(ss, trs), trs)
+    assert len(scene.bus33.segments) == 2
+    assert scene.bus33.coupler_x is not None
+    seg0 = [b for b in scene.bays33 if b.kind != "bus_pt_33" and b.segment == 0]
+    seg1 = [b for b in scene.bays33 if b.kind != "bus_pt_33" and b.segment == 1]
+    assert len(seg0) >= 1 and len(seg1) >= 1
+    assert abs(len(seg0) - len(seg1)) <= 1
+    # segments are contiguous and meet at coupler_x
+    (a0, a1), (b0, b1) = scene.bus33.segments
+    assert a1 <= scene.bus33.coupler_x <= b0 or a1 == b0
