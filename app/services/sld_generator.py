@@ -379,8 +379,26 @@ class SLDGenerator:
             gap_x = (sections11[k].bus[1] + sections11[k + 1].bus[0]) // 2
             couplers11.append(Coupler(orientation="h11", between=(k, k + 1), x=gap_x))
 
-        return Scene(width=width, height=Y["legend"], title=title, bus33=bus33,
-                     bays33=bays33, sections11=sections11, couplers11=couplers11, legend=None)
+        legend_entries = [
+            LegendEntry("la", "Lightning / Surge Arrester", "Diverts surge energy to earth"),
+            LegendEntry("isolator", "Disconnector (Isolator)", "Off-load isolation; hatched = with earth switch"),
+            LegendEntry("vcb", "Vacuum Circuit Breaker", "On-load make / break"),
+            LegendEntry("ar", "Auto-Recloser", "Self-reclosing breaker on outgoing feeders"),
+            LegendEntry("ct", "Current Transformer", "Metering & protection current sensing"),
+            LegendEntry("pt", "Voltage (Potential) Transformer", "Bus voltage sensing / metering"),
+            LegendEntry("transformer", "Power Transformer", "33/11 kV; HV winding red, LV blue"),
+            LegendEntry("station_transformer", "Station Transformer", "33/0.4 kV auxiliary supply"),
+            LegendEntry("coupler", "Bus Coupler", "Links two bus sections"),
+            LegendEntry("bus", "Busbar", "33 kV red | 11 kV blue"),
+            LegendEntry("earth", "Earth", "Earthing connection"),
+            LegendEntry("ocef", "OC/EF TVM", "Over-current / earth-fault protection relay"),
+        ]
+        legend_rows = (len(legend_entries) + 2) // 3
+        legend_h = 24 + legend_rows * 22
+        legend = LegendBox(x=M, y=Y["legend"], w=width - 2 * M, h=legend_h, entries=legend_entries)
+
+        return Scene(width=width, height=Y["legend"] + legend_h + M, title=title, bus33=bus33,
+                     bays33=bays33, sections11=sections11, couplers11=couplers11, legend=legend)
 
     # ── bay builders ───────────────────────────────────────────────────
     def _bay_33kv(self, feeder, x, segment):
@@ -556,7 +574,20 @@ class SLDGenerator:
         return ""
 
     def _render_legend(self, legend):
-        return ""  # filled in Task 9
+        cols = 3
+        col_w = legend.w // cols
+        out = [f'<g transform="translate({legend.x},{legend.y})">',
+               f'<rect x="0" y="0" width="{legend.w}" height="{legend.h}" fill="#f8f9fa" stroke="#ccc" rx="4"/>',
+               f'<text x="8" y="15" font-size="9" font-weight="700" fill="#1a2744" letter-spacing="1">LEGEND</text>']
+        for i, e in enumerate(legend.entries):
+            r, c = divmod(i, cols)
+            gx = 10 + c * col_w
+            gy = 26 + r * 22
+            out.append(f'<rect x="{gx}" y="{gy}" width="16" height="12" fill="white" stroke="#888"/>')
+            out.append(f'<text x="{gx+22}" y="{gy+6}" font-size="7.5" font-weight="700" fill="#333">{e.name}</text>')
+            out.append(f'<text x="{gx+22}" y="{gy+15}" font-size="6.5" fill="#777">{e.description}</text>')
+        out.append("</g>")
+        return "".join(out)
 
     def _error_svg(self, msg):
         return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 120"><rect width="500" height="120" fill="#fff1f0" rx="8"/><text x="250" y="65" text-anchor="middle" fill="#cc2200" font-family="Rajdhani,sans-serif" font-size="14" font-weight="700">{msg}</text></svg>'

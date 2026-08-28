@@ -317,3 +317,28 @@ def test_generate_single_transformer_still_renders():
     db = FakeDB(substations=[ss], feeders=feeders, transformers=[t1])
     svg = SLDGenerator(db).generate(str(ss["_id"]))
     assert "Feeder A" in svg and svg.count("<svg") == 1
+
+
+# ── legend ─────────────────────────────────────────────────────────────
+def test_layout_builds_legend_with_twelve_entries():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    _, _, scene = _build(ss, [_fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+                              _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1)], [t1])
+    assert scene.legend is not None
+    assert len(scene.legend.entries) == 12
+    names = {e.name for e in scene.legend.entries}
+    assert {"Vacuum Circuit Breaker", "Bus Coupler", "OC/EF TVM", "Earth"} <= names
+    assert scene.height == G.Y["legend"] + scene.legend.h + G.LAYOUT["MARGIN"]
+
+
+def test_render_includes_legend_text():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    db = FakeDB(substations=[ss],
+                feeders=[_fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+                         _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1)],
+                transformers=[t1])
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+    assert "LEGEND" in svg
+    assert "Lightning" in svg and "Auto-Recloser" in svg and "Earthing" in svg
