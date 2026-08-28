@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 from app import mongo, bcrypt
 from app.models import audit_log_doc
 from bson import ObjectId
+from app.routes.helpers import parse_object_id
 
 users_bp = Blueprint("users", __name__)
 
@@ -44,6 +45,9 @@ def patch_user(user_id):
     err = _admin_required()
     if err:
         return err
+    uid, err = parse_object_id(user_id, "user ID")
+    if err:
+        return err
     data = request.get_json(silent=True) or {}
     update = {}
     if "is_active" in data:
@@ -52,7 +56,9 @@ def patch_user(user_id):
         update["role"] = data["role"]
     if not update:
         return jsonify(error="No valid fields"), 400
-    mongo.db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update})
+    result = mongo.db.users.update_one({"_id": uid}, {"$set": update})
+    if result.matched_count == 0:
+        return jsonify(error="User not found"), 404
     mongo.db.audit_logs.insert_one(
         audit_log_doc(get_jwt_identity(), "patch_user", "users", user_id, str(update))
     )
@@ -65,13 +71,21 @@ def reset_password(user_id):
     err = _admin_required()
     if err:
         return err
+    uid, err = parse_object_id(user_id, "user ID")
+    if err:
+        return err
     data = request.get_json(silent=True) or {}
     new_pw = data.get("new_password", "")
     if len(new_pw) < 8:
         return jsonify(error="Password must be at least 8 characters"), 400
     pw_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
-    mongo.db.users.update_one(
-        {"_id": ObjectId(user_id)},
+    result = mongo.db.users.update_one(
+        {"_id": uid},
         {"$set": {"password_hash": pw_hash, "password_reset_required": True}}
+    )
+    if result.matched_count == 0:
+        return jsonify(error="User not found"), 404
+    mongo.db.audit_logs.insert_one(
+        audit_log_doc(get_jwt_identity(), "reset_password", "users", user_id)
     )
     return jsonify(message="Password reset")
