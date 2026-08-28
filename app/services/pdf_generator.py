@@ -1,5 +1,5 @@
 """
-PDF Report Generator — Pure ReportLab, no svglib.
+PDF Report Generator — ReportLab + svglib (SVG snapshot page).
 Generates a full substation report:
   Page 1: Cover + substation info + topology summary
   Page 2: Transformer details table
@@ -19,6 +19,11 @@ from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Spacer,
     Paragraph, HRFlowable, PageBreak, KeepTogether,
 )
+
+try:
+    from svglib.svglib import svg2rlg
+except Exception:                     # pragma: no cover
+    svg2rlg = None
 
 # Colour palette
 C_DARK    = colors.HexColor("#1a2744")
@@ -47,8 +52,25 @@ class PDFReportGenerator:
     def __init__(self, db):
         self.db = db
 
+    def _svg_snapshot_flowables(self, svg_string, max_w, max_h):
+        """Return [Drawing, PageBreak] for the SVG, or [] on any failure."""
+        if not svg_string or svg2rlg is None:
+            return []
+        try:
+            drawing = svg2rlg(io.StringIO(svg_string))
+            if drawing is None or not drawing.width or not drawing.height:
+                return []
+            scale = min(max_w / drawing.width, max_h / drawing.height, 1.0)
+            drawing.scale(scale, scale)
+            drawing.width *= scale
+            drawing.height *= scale
+            return [drawing, PageBreak()]
+        except Exception:
+            return []
+
     def generate(self, substation_id: str, svg_string: str = None) -> bytes:
-        """svg_string ignored — we generate native ReportLab content."""
+        """Page 1 is a snapshot of `svg_string` (skipped if absent or
+        unconvertible); the rest is native ReportLab content."""
         ss = self.db.substations.find_one({"_id": ObjectId(substation_id)})
         if not ss:
             raise ValueError("Substation not found")
@@ -88,6 +110,8 @@ class PDFReportGenerator:
 
         story = []
         usable_w = page_w - 32*mm
+
+        story += self._svg_snapshot_flowables(svg_string, page_w - 30*mm, page_h - 30*mm)
 
         # ── PAGE 1: Cover ────────────────────────────────────────────────────
         story.append(Spacer(1, 8*mm))
@@ -131,10 +155,10 @@ class PDFReportGenerator:
         bus_config = (topo.get("bus_config") or "single_bus").replace("_"," ").title()
         topo_data = [
             ["Bus Configuration", bus_config,
-             "No. of Transformers", _s(topo.get("num_transformers"))],
-            ["Bus Coupler Present", "Yes" if topo.get("has_bus_coupler") else "No",
-             "Station Transformer", "Yes" if topo.get("has_station_transformer") else "No"],
-            ["33 kV Incoming Feeders", _s(topo.get("incoming_33kv_count")),
+             "11 kV Sections", _s(topo.get("num_11kv_sections"))],
+            ["33 kV Bus Coupler", "Yes" if topo.get("has_33kv_bus_coupler") else "No",
+             "11 kV Bus Coupler", "Yes" if topo.get("has_11kv_bus_coupler") else "No"],
+            ["Station Transformer", "Yes" if topo.get("has_station_transformer") else "No",
              "11 kV Outgoing Feeders", _s(topo.get("outgoing_11kv_count"))],
         ]
         topo_tbl = Table(topo_data, colWidths=[info_col_w*0.8, info_col_w*1.2]*2)
