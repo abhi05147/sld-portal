@@ -95,13 +95,25 @@ def _dms_to_decimal(dms_str):
         return None
 
 
+# A station/auxiliary transformer is named with a station word AND a
+# transformer word. A bare substring test mangles real feeder names such as
+# "Police Station Feeder", "Railway Station" or "Bus Station Road".
+_STATION_RE = re.compile(r"\b(station|auxiliary|aux)\b", re.I)
+_XFMR_RE    = re.compile(r"\b(tr|transformer|txr|kva)\b", re.I)
+
+
+def _is_station_transformer_name(name):
+    n = name or ""
+    return bool(_STATION_RE.search(n) and _XFMR_RE.search(n))
+
+
 def _classify_feeder(name, voltage_str):
     """Fallback feeder_type heuristic, used when the Feeder Type column is blank/unrecognized."""
     if not name:
         return None
     n = name.lower()
     v = str(voltage_str or "").lower()
-    if "station" in n or "auxiliary" in n or "aux" in n:
+    if _is_station_transformer_name(name):
         return "station_transformer"
     if "bus coupler" in n or "bus-coupler" in n or "bc" == n:
         return "bus_coupler"
@@ -116,23 +128,20 @@ def _classify_feeder(name, voltage_str):
     return "outgoing_11kv"
 
 
-_STATION_KEYWORDS = ("station", "auxiliary", " aux", "aux ")
-
-
 def _resolve_feeder_type(name, raw_type, voltage):
-    """Name-based overrides win over the (often mislabelled) Feeder Type column:
-    a "coupler" name is always a bus coupler; a "station"/"auxiliary" name is
-    always the station transformer. Otherwise use the mapped Feeder Type column,
-    else the name/voltage heuristic. An "Outgoing Feeder" at 33 kV is a full
-    33 kV bay, not an 11 kV consumer feeder."""
+    """A "coupler" name is always a bus coupler — that override still wins over
+    the (often mislabelled) Feeder Type column. Otherwise an explicit, mapped
+    Feeder Type wins; only when the column is blank or unrecognised do we fall
+    back to the name heuristics (station transformer, then name/voltage).
+    An "Outgoing Feeder" at 33 kV is a full 33 kV bay, not an 11 kV feeder."""
     lname = (name or "").lower()
     if name and "coupler" in lname:
         return "bus_coupler"
-    if name and (lname.startswith("aux") or any(k in lname for k in _STATION_KEYWORDS)):
-        return "station_transformer"
-    if raw_type:
-        mapped = FEEDER_TYPE_MAP.get(str(raw_type).strip().lower())
-        ftype = mapped if mapped else _classify_feeder(name, voltage)
+    mapped = FEEDER_TYPE_MAP.get(str(raw_type).strip().lower()) if raw_type else None
+    if mapped:
+        ftype = mapped
+    elif _is_station_transformer_name(name):
+        ftype = "station_transformer"
     else:
         ftype = _classify_feeder(name, voltage)
     if ftype == "outgoing_11kv" and "33" in str(voltage or "").lower():

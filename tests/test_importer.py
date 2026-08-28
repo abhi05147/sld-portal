@@ -57,9 +57,25 @@ def test_resolve_feeder_type_reclassifies_33kv_outgoing_feeder_as_outgoing_33kv(
 
 
 def test_resolve_feeder_type_detects_station_transformer_by_name():
-    # Source data often labels the station TR row as a plain outgoing feeder
-    assert _resolve_feeder_type("33kV Station Tr", "Outgoing Feeder", "33kV") == "station_transformer"
+    # Only when the Feeder Type column is blank/unrecognised: an explicit column wins.
+    assert _resolve_feeder_type("33kV Station Tr", None, "33kV") == "station_transformer"
     assert _resolve_feeder_type("Auxiliary Transformer", None, "33kV") == "station_transformer"
+    assert _resolve_feeder_type("100 kVA 33/0.4kV Station Transformer", None,
+                                "33kV") == "station_transformer"
+
+
+def test_resolve_feeder_type_explicit_column_beats_the_station_name_heuristic():
+    # A1/I1: an explicit Feeder Type must win over the name heuristic.
+    assert _resolve_feeder_type("33kV Station Tr", "Outgoing Feeder", "33kV") == "outgoing_33kv"
+
+
+def test_resolve_feeder_type_station_word_in_a_real_feeder_name_is_not_a_station_tr():
+    # I1: substring matching used to mangle these real APDCL feeder names.
+    assert _resolve_feeder_type("Police Station Feeder", "Outgoing Feeder", "11kV") == "outgoing_11kv"
+    assert _resolve_feeder_type("Police Station Feeder", None, "11kV") == "outgoing_11kv"
+    assert _resolve_feeder_type("Railway Station", None, "11kV") == "outgoing_11kv"
+    assert _resolve_feeder_type("Bus Station Road", None, "11kV") == "outgoing_11kv"
+    assert _resolve_feeder_type("Auxiliary Colony Feeder", None, "11kV") == "outgoing_11kv"
 
 
 def test_resolve_feeder_type_station_name_does_not_shadow_bus_coupler():
@@ -168,9 +184,26 @@ def test_import_splits_33kv_outgoing_feeders_into_outgoing_33kv(imported):
     db, summary = imported
     og33 = [f for f in db.feeders.docs if f["feeder_type"] == "outgoing_33kv"]
     outgoing_11kv = [f for f in db.feeders.docs if f["feeder_type"] == "outgoing_11kv"]
-    assert len(og33) == 33
-    assert len(outgoing_11kv) == 208
+    # 35/213 (was 33/208): the tightened station/aux match no longer steals the
+    # seven rows literally named "Station"/"Machkhowa/Station" — see
+    # test_import_no_longer_mangles_feeders_merely_named_station below.
+    assert len(og33) == 35
+    assert len(outgoing_11kv) == 213
     assert all(f["voltage_kv"] == 33 for f in og33)
+
+
+def test_import_no_longer_mangles_feeders_merely_named_station(imported):
+    """I1/A5: a name must carry BOTH a station word and a transformer word, and
+    an explicit Feeder Type column wins. Every row in this file named "Station"
+    carries an explicit "Outgoing Feeder" type and no transformer word, so none
+    of them is a station transformer any more."""
+    db, summary = imported
+    stn = [f for f in db.feeders.docs if f["feeder_type"] == "station_transformer"]
+    assert stn == []
+    named_station = [f for f in db.feeders.docs if "station" in f["name"].lower()]
+    assert named_station                      # the rows really are in the file
+    assert all(f["feeder_type"] in ("outgoing_11kv", "outgoing_33kv")
+               for f in named_station)
 
 
 def test_import_populates_pt_fields(imported):

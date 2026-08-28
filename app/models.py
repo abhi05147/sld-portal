@@ -151,8 +151,15 @@ def infer_topology(feeders: list) -> dict:
     A `bus_coupler` feeder with voltage_kv == 33 is a 33 kV coupler; any other
     `bus_coupler` (voltage_kv 11 or absent) is an 11 kV coupler.
     """
+    def _type_of(f):
+        ft = f.get("feeder_type")
+        # Back-compat shim for pre-branch data: `lilo_33kv` was retired in
+        # favour of `outgoing_33kv`; read old rows as the new type so they are
+        # still counted. Not a schema change — nothing is rewritten.
+        return "outgoing_33kv" if ft == "lilo_33kv" else ft
+
     def _is(ft):
-        return [f for f in feeders if f.get("feeder_type") == ft]
+        return [f for f in feeders if _type_of(f) == ft]
 
     couplers      = _is("bus_coupler")
     has_33_bc     = any(f.get("voltage_kv") == 33 for f in couplers)

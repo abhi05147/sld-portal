@@ -127,7 +127,7 @@ def generate_template() -> bytes:
         ["10. Substations are matched by Substation Name + ESD + Primary GSS together. If two substations share a name, make sure their ESD or Primary GSS differs so they don't get merged."],
         ["11. For autorecloser feeders: set VCB Type to 'Autorecloser' — the system will detect and render the AR symbol automatically."],
         ["12. Bus coupler rows: set Feeder Name to 'Bus Coupler'. Set Feeder Voltage to 33kV for a 33kV bus coupler, otherwise it is treated as an 11kV bus coupler. (Feeder Type is ignored for these rows.)"],
-        ["13. A row whose Feeder Name contains 'Station' or 'Auxiliary' is imported as the station transformer. An 'Outgoing Feeder' row at 33kV voltage is imported as a full 33kV outgoing bay."],
+        ["13. Station transformer rows: leave Feeder Type BLANK and give the Feeder Name both a station word ('Station' / 'Auxiliary') and a transformer word ('Tr' / 'Transformer' / 'kVA') — e.g. '100 kVA 33/0.4kV Station Transformer'. An explicit Feeder Type always wins, so an ordinary feeder merely named after a station ('Police Station Feeder') stays an outgoing feeder. An 'Outgoing Feeder' row at 33kV voltage is imported as a full 33kV outgoing bay."],
         [""],
         ["COLUMN GROUPS (colour coded):"],
         ["Dark Blue (cols 1-9)  — General substation details"],
