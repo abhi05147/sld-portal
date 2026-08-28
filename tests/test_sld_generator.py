@@ -145,3 +145,49 @@ def test_layout_transformer_bay_never_reaches_11kv_band():
     tr_bay = next(b for b in scene.bays33 if b.kind == "transformer")
     assert tr_bay.x == scene.sections11[0].bus[0] or tr_bay.x >= G.LAYOUT["MARGIN"]
     assert G.Y["tr_bot"] < G.Y["bus11"]
+
+
+# ── _layout: 33 kV outgoing + station transformer ────────────────────────
+def test_layout_33kv_outgoing_feeder_gets_full_bay():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    feeders = [
+        _fd(ss, 1, "33kV UG Incomer-1", "incoming_33kv", 33),
+        _fd(ss, 2, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 3, "33kV Chandmari O/g", "outgoing_33kv", 33),
+        _fd(ss, 4, "33kV Paltanbazar O/g", "outgoing_33kv", 33),
+        _fd(ss, 5, "New Ulubari", "outgoing_11kv", 11, tr=t1),
+    ]
+    _, _, scene = _build(ss, feeders, [t1])
+    og = [b for b in scene.bays33 if b.kind == "outgoing_33kv"]
+    assert [b.label for b in og] == ["33kV Chandmari O/g", "33kV Paltanbazar O/g"]
+    assert [e.kind for e in og[0].equipment][:4] == ["la", "isolator", "vcb", "ct"]
+    assert og[0].voltage_kv == 33
+
+
+def test_layout_station_transformer_single_bay_before_bus_pt():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    feeders = [
+        _fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 2, "100 kVA 33/0.4kV Station Tr", "station_transformer", 33),
+        _fd(ss, 3, "New Ulubari", "outgoing_11kv", 11, tr=t1),
+    ]
+    _, _, scene = _build(ss, feeders, [t1])
+    kinds = [b.kind for b in scene.bays33]
+    assert kinds.count("station_transformer") == 1
+    assert kinds.index("station_transformer") == len(kinds) - 2  # just before bus_pt_33
+    assert kinds[-1] == "bus_pt_33"
+
+
+def test_layout_ocef_marker_only_when_relay_data_present():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    f_with = _fd(ss, 1, "33kV A O/g", "outgoing_33kv", 33)
+    f_with["switchgear"]["oc_ef_relay_type"] = "Numerical"
+    f_without = _fd(ss, 2, "33kV B O/g", "outgoing_33kv", 33)
+    _, _, scene = _build(ss, [f_with, f_without, _fd(ss, 3, "Tr-1 HV", "transformer_hv", 33, tr=t1)], [t1])
+    a = next(b for b in scene.bays33 if b.label == "33kV A O/g")
+    b = next(b for b in scene.bays33 if b.label == "33kV B O/g")
+    assert any(e.kind == "ocef" for e in a.equipment)
+    assert not any(e.kind == "ocef" for e in b.equipment)
