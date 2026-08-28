@@ -62,6 +62,25 @@ def test_generate_with_no_svg_still_produces_pdf():
     assert out[:4] == b"%PDF"
 
 
+def test_snapshot_adds_a_page_compared_to_the_no_svg_report():
+    """B5: the SVG snapshot really becomes an extra page."""
+    db, sid = _fixture()
+    with_svg = PDFReportGenerator(db).generate(sid, VALID_SVG)
+    without   = PDFReportGenerator(db).generate(sid, None)
+    assert with_svg.count(b"/Type /Page\n") > without.count(b"/Type /Page\n")
+
+
+def test_real_sld_svg_round_trips_through_the_pdf_generator():
+    """B5: the actual SLDGenerator output must survive svglib, not just a toy SVG."""
+    from app.services.sld_generator import SLDGenerator
+    db, sid = _fixture()
+    svg = SLDGenerator(db).generate(sid)
+    out = PDFReportGenerator(db).generate(sid, svg)
+    assert out[:4] == b"%PDF"
+    baseline = PDFReportGenerator(db).generate(sid, None)
+    assert out.count(b"/Type /Page\n") > baseline.count(b"/Type /Page\n")
+
+
 def test_valid_svg_is_passed_through_svg2rlg(monkeypatch):
     import app.services.pdf_generator as P
     calls = []

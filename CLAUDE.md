@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -r requirements-dev.txt        # runtime deps + pytest
 python run.py                              # dev server on :5000 (debug)
 pytest                                     # run all tests
-pytest tests/test_sld_generator.py -k lilo # single file / single test
+pytest tests/test_sld_generator.py -k layout # single file / single test
 
 # create initial admin (needs FLASK_APP=run.py and a live MONGO_URI)
 flask seed-admin <username> <email> <password>
@@ -26,7 +26,7 @@ Flask + PyMongo app that turns tabular substation data into IEC 60617 single-lin
 
 **Data model** (`app/models.py`): collections `grid_substations`, `substations`, `transformers`, `feeders`, `users`, `audit_logs`. A substation owns transformers and feeders by `substation_id`. `feeder_type` is the key discriminator: `incoming_33kv` | `outgoing_33kv` | `transformer_hv` | `station_transformer` | `incomer_11kv` | `outgoing_11kv` | `bus_coupler`.
 
-**Topology is derived, never stored by hand.** `infer_topology(feeders)` computes `bus_config` ∈ `{single_bus, sectionalized_11kv, sectionalized_33kv, sectionalized_both}` plus section/coupler counts (`num_11kv_sections`, `has_11kv_bus_coupler`, `has_33kv_bus_coupler`, `has_station_transformer`, `outgoing_33kv_count`). Call `refresh_substation_topology()` (`app/routes/helpers.py`) after any feeder mutation so the stored `substation.topology` stays in sync. The SLD and PDF generators branch on `bus_config`.
+**Topology is derived, never stored by hand.** `infer_topology(feeders)` computes `bus_config` ∈ `{single_bus, sectionalized_11kv, sectionalized_33kv, sectionalized_both}` plus section/coupler counts (`num_11kv_sections`, `has_11kv_bus_coupler`, `has_33kv_bus_coupler`, `has_station_transformer`, `outgoing_33kv_count`). The stored `substation.topology` is refreshed **only by `ExcelImporter._import_sheet`** on (re)import — the feeder CRUD routes do not currently re-run `infer_topology`, so a substation edited feeder-by-feeder can carry a stale `topology` until it is re-imported. Because of that, `sld_generator._layout` derives the bus configuration it prints from the feeders it was handed rather than from the stored value; `pdf_generator` still reads `topology` for its summary table.
 
 **Services** (`app/services/`):
 - `import_schema.py` — the canonical ordered `FIELD_HEADERS` (52 columns) + `REQUIRED_FIELDS`. Single source of truth shared by importer and template generator; changing the Excel layout means editing only this file.
@@ -38,7 +38,7 @@ Flask + PyMongo app that turns tabular substation data into IEC 60617 single-lin
   walks it emitting SVG via stateless `sym_*` helpers. `_layout` is unit-tested with the
   in-memory `FakeDB`. Rating constants in the module-level `RATINGS` dict. Colours: 33 kV
   `#CC2200`, 11 kV `#0055CC`, bus `#111111`, earth `#006600`.
-- `pdf_generator.py` (`PDFReportGenerator`) — pure ReportLab multi-page report; receives the already-rendered SVG string.
+- `pdf_generator.py` (`PDFReportGenerator`) — ReportLab multi-page report; receives the already-rendered SVG string and converts it via `svglib.svg2rlg` into the snapshot page ahead of the cover (silently skipped if the SVG is absent or unconvertible).
 
 **Frontend:** server-rendered Jinja templates in `app/templates/` + vanilla JS; `static/` holds no local assets (Leaflet etc. via CDN).
 

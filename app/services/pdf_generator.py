@@ -1,10 +1,10 @@
 """
 PDF Report Generator — ReportLab + svglib (SVG snapshot page).
 Generates a full substation report:
-  Page 1: Cover + substation info + topology summary
-  Page 2: Transformer details table
-  Page 3: Feeder & switchgear details table
-  Page 4: DC supply table + meter details
+  Page 1: SLD snapshot (omitted when no/unconvertible SVG is supplied)
+  Page 2: Cover + substation info + topology summary
+  Page 3: Transformer details + feeder & switchgear tables
+  Page 4: Meter & CT details + DC supply table
 """
 import io
 from datetime import datetime, timezone
@@ -36,6 +36,13 @@ C_LTGREY  = colors.HexColor("#f8f9fa")
 C_BORDER  = colors.HexColor("#cccccc")
 
 
+# Frame geometry: reportlab's default Frame pads 6pt on every side, so the
+# usable box is doc.width/height minus 2*pad. A couple of points of slack keep
+# float rounding from tipping a full-height drawing over the edge.
+_FRAME_PAD   = 6
+_FRAME_SLACK = 4
+
+
 def _s(v):
     """Safe string — return dash for None/empty."""
     if v is None:
@@ -64,13 +71,14 @@ class PDFReportGenerator:
             drawing.scale(scale, scale)
             drawing.width *= scale
             drawing.height *= scale
-            return [drawing, PageBreak()]
+            # keep the whole diagram on one page — never let it split
+            return [KeepTogether([drawing]), PageBreak()]
         except Exception:
             return []
 
     def generate(self, substation_id: str, svg_string: str = None) -> bytes:
-        """Page 1 is a snapshot of `svg_string` (skipped if absent or
-        unconvertible); the rest is native ReportLab content."""
+        """The first page is a snapshot of `svg_string` (omitted entirely if it
+        is absent or unconvertible); the rest is native ReportLab content."""
         ss = self.db.substations.find_one({"_id": ObjectId(substation_id)})
         if not ss:
             raise ValueError("Substation not found")
@@ -111,9 +119,15 @@ class PDFReportGenerator:
         story = []
         usable_w = page_w - 32*mm
 
-        story += self._svg_snapshot_flowables(svg_string, page_w - 30*mm, page_h - 30*mm)
+        # Size the snapshot against the document's REAL frame, not the page:
+        # SimpleDocTemplate's frame is doc.width/height less 6pt of padding on
+        # each side. KeepTogether forbids splitting, so anything larger raises
+        # a LayoutError instead of flowing.
+        frame_w = doc.width - 2 * _FRAME_PAD - _FRAME_SLACK
+        frame_h = doc.height - 2 * _FRAME_PAD - _FRAME_SLACK
+        story += self._svg_snapshot_flowables(svg_string, frame_w, frame_h)
 
-        # ── PAGE 1: Cover ────────────────────────────────────────────────────
+        # ── Cover (page 1, or page 2 behind the SLD snapshot) ────────────────────────────────────────────────────
         story.append(Spacer(1, 8*mm))
         story.append(Paragraph("SINGLE LINE DIAGRAM &amp; EQUIPMENT REPORT", title_st))
         story.append(Paragraph(
@@ -183,7 +197,7 @@ class PDFReportGenerator:
 
         story.append(PageBreak())
 
-        # ── PAGE 2: Transformer Details ──────────────────────────────────────
+        # ── Transformer Details ──────────────────────────────────────
         story.append(Paragraph("POWER TRANSFORMER DETAILS", section_st))
         tr_hdrs = ["#", "Capacity\n(MVA)", "Make", "YOM",
                    "Max Load\n(MW)", "Max OTI\n(°C)", "Max WTI\n(°C)"]
@@ -226,7 +240,7 @@ class PDFReportGenerator:
 
         story.append(PageBreak())
 
-        # ── PAGE 3: Meter Details ─────────────────────────────────────────────
+        # ── Meter Details ─────────────────────────────────────────────
         story.append(Paragraph("METER &amp; CT DETAILS", section_st))
         mt_hdrs = ["#", "Feeder Name", "Meter No.", "Make",
                    "Type", "Status", "CTR", "MF", "CT Type", "CT Status", "DCU"]
