@@ -281,3 +281,39 @@ def test_layout_more_coupler_records_than_gaps_are_ignored():
     ]
     _, _, scene = _build(ss, feeders, [t1, t2])
     assert len(scene.couplers11) == 1  # only one gap available
+
+
+# ── _render smoke ───────────────────────────────────────────────────────
+def test_generate_full_ulubari_svg_smoke():
+    ss = _ss(bus_config="sectionalized_both")
+    trs = [_tr(ss, 1), _tr(ss, 2), _tr(ss, 3)]
+    feeders = _ulubari_feeders(ss, trs)
+    db = FakeDB(substations=[ss], feeders=feeders, transformers=trs)
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    assert "DATE OF LAST UPDATE" in svg
+    assert "ULUBARI" in svg.upper()
+    for nm in ["33kV UG Incomer-1", "33kV Chandmari O/g", "New Ulubari",
+               "South Surekha", "Station Tr"]:
+        assert nm in svg
+    assert "BUS COUPLER" in svg
+    assert "lilo" not in svg.lower()
+    assert "33 kV" in svg or "33KV" in svg.upper()
+
+
+def test_generate_missing_substation_returns_error_svg():
+    db = FakeDB(substations=[], feeders=[], transformers=[])
+    svg = SLDGenerator(db).generate(str(ObjectId()))
+    assert "Substation not found" in svg
+
+
+def test_generate_single_transformer_still_renders():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    feeders = [_fd(ss, 1, "33kV Incomer", "incoming_33kv", 33),
+               _fd(ss, 2, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+               _fd(ss, 3, "Feeder A", "outgoing_11kv", 11, tr=t1)]
+    db = FakeDB(substations=[ss], feeders=feeders, transformers=[t1])
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+    assert "Feeder A" in svg and svg.count("<svg") == 1
