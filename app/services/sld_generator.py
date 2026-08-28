@@ -346,6 +346,26 @@ class SLDGenerator:
         stn     = by_type.get("station_transformer", [])
         trs     = sorted(transformers, key=lambda t: t.get("sequence", 0))
 
+        # A transformer with an upstream_feeder_id matching one of this
+        # substation's incoming_33kv feeders is drawn immediately after that
+        # feeder's bay (grouped by feeder, in sequence order); a transformer
+        # with no match — including every transformer that predates this
+        # field — falls into one block after all incoming feeders, exactly as
+        # before. That fallback is the only path when the field goes unused,
+        # so pre-existing layouts are unaffected.
+        inc33_ids = {f["_id"] for f in inc33}
+        upstream_groups = {}
+        unlinked_trs = []
+        for t in trs:
+            fid = t.get("upstream_feeder_id")
+            if fid in inc33_ids:
+                upstream_groups.setdefault(fid, []).append(t)
+            else:
+                unlinked_trs.append(t)
+        for grp in upstream_groups.values():
+            grp.sort(key=lambda t: t.get("sequence", 0))
+        trs = [t for f in inc33 for t in upstream_groups.get(f["_id"], [])] + unlinked_trs
+
         # feeders -> section index
         tr_id_to_idx = {t["_id"]: i for i, t in enumerate(trs)}
         sec_feeders = [[] for _ in trs] or [[]]
@@ -372,18 +392,26 @@ class SLDGenerator:
 
         # ---- 33 kV bays, left -> right ----
         bays33 = []
+        sec_slots = []
         x = M
+
+        def _place_transformer(t, idx):
+            nonlocal x
+            slot_w = slot_widths[idx]
+            sec_x0 = x + (slot_w - sec_widths[idx]) // 2
+            cx = sec_x0 + sec_left[idx] * FW + FW // 2
+            bays33.append(self._bay_transformer(t, cx, 0))
+            sec_slots.append((sec_x0, sec_x0 + sec_widths[idx], cx))
+            x += slot_w
+
+        ti = 0
         for f in inc33:
             bays33.append(self._bay_33kv(f, x + LAYOUT["BAY_W"] // 2, 0)); x += LAYOUT["BAY_W"]
-        sec_origin = x                       # 11 kV sections start under the transformers
-        sec_slots = []
-        for i, t in enumerate(trs):
-            slot_w = slot_widths[i]
-            sec_x0 = x + (slot_w - sec_widths[i]) // 2
-            cx = sec_x0 + sec_left[i] * FW + FW // 2
-            bays33.append(self._bay_transformer(t, cx, 0))
-            sec_slots.append((sec_x0, sec_x0 + sec_widths[i], cx))
-            x += slot_w
+            for t in upstream_groups.get(f["_id"], []):
+                _place_transformer(t, ti); ti += 1
+        sec_origin = M + len(inc33) * LAYOUT["BAY_W"]   # 11 kV sections start under the transformers
+        for t in unlinked_trs:
+            _place_transformer(t, ti); ti += 1
         sec_end = x
         for f in out33:
             bays33.append(self._bay_33kv(f, x + LAYOUT["BAY_W"] // 2, 0)); x += LAYOUT["BAY_W"]
@@ -610,21 +638,32 @@ class SLDGenerator:
             tr = bay.ref or {}
             # LV lead stops at tr_bot — the 11 kV incomer bay continues from there
             # down to the section busbar, so the two are in series on one x.
-            out = [f'<text x="{bay.x}" y="{Y["bay33_top"]-8}" text-anchor="middle" class="lbl33">{esc(bay.label[:40])}</text>',
-                   sym_line(bay.x, bus_y, bay.x, Y["tr_top"]-18, color="#CC2200"),
+            # No separate title text above the bus here — the capacity/voltage/
+            # number already sit right on the transformer symbol itself below.
+            out = [sym_line(bay.x, bus_y, bay.x, Y["tr_top"]-18, color="#CC2200"),
                    sym_isolator(bay.x, Y["tr_top"], has_earth=True, color="#CC2200", label=RATINGS["iso_33"]),
                    sym_line(bay.x+12, Y["tr_top"]+18, bay.x, Y["tr_top"]+40, color="#CC2200"),
-                   sym_transformer(bay.x, Y["tr_top"]+78, label=f'{tr.get("capacity_mva","?")}MVA\n33/11kV'),
+                   sym_transformer(bay.x, Y["tr_top"]+78,
+                                   label=f'{tr.get("capacity_mva","?")}MVA\n33/11kV\nTr-{tr.get("sequence","")}'),
                    sym_line(bay.x, Y["tr_top"]+116, bay.x, Y["tr_bot"], color="#0055CC")]
             return "".join(out)
 
         top = Y["bay33_top"]
         out = [f'<text x="{bay.x}" y="{top-8}" text-anchor="middle" class="lbl33">{esc(bay.label[:24])}</text>']
+        # OC/EF is the CT's own relay, not a separate stack item — it shares
+        # the CT's row (offset sideways) instead of claiming a step of its own.
+        chain = [e for e in bay.equipment if e.kind != "ocef"]
+        ocef = [e for e in bay.equipment if e.kind == "ocef"]
         y = top
-        step = (bus_y - top) / (len(bay.equipment) + 1)
-        for e in bay.equipment:
+        step = (bus_y - top) / (len(chain) + 1)
+        ct_y = None
+        for e in chain:
             y += step
             out.append(self._render_equip(e, bay.x, int(y), c))
+            if e.kind == "ct":
+                ct_y = int(y)
+        for e in ocef:
+            out.append(self._render_equip(e, bay.x, ct_y if ct_y is not None else int(y), c))
         out.append(sym_line(bay.x, top, bay.x, bus_y, color=c))
         return "".join(out)
 
@@ -667,7 +706,12 @@ class SLDGenerator:
         if e.kind == "ct":
             return sym_ct(x, y, label=e.label or "CT", color="#555")
         if e.kind == "ocef":
-            return sym_ocef_marker(x + 12, y)
+            # Sits below the CT, on the same x, instead of beside it — beside
+            # it collided with the CT's own ratio label, which always reads
+            # to the right (matches every other equipment symbol's label).
+            # +24 clears the CT ellipse (ry=7) and stays well inside the
+            # fixed ~51px gap the CT->bus step always leaves below it.
+            return sym_ocef_marker(x, y + 24)
         return ""
 
     # Each legend entry draws its real symbol at reduced scale (spec §3.4).

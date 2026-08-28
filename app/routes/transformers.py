@@ -15,7 +15,30 @@ transformers_bp = Blueprint("transformers", __name__)
 def _ser(t):
     t["_id"] = str(t["_id"])
     t["substation_id"] = str(t["substation_id"])
+    if t.get("upstream_feeder_id"):
+        t["upstream_feeder_id"] = str(t["upstream_feeder_id"])
     return t
+
+
+def _resolve_upstream_feeder(substation_id, raw_value):
+    """Validate an optional upstream_feeder_id: it must reference an
+    existing incoming_33kv feeder belonging to this substation — the only
+    feeder type sld_generator._layout groups transformers under.
+    Returns (ObjectId | None, error_response | None)."""
+    if not raw_value:
+        return None, None
+    fid, err = parse_object_id(raw_value, "upstream feeder ID")
+    if err:
+        return None, err
+    feeder = mongo.db.feeders.find_one(
+        {"_id": fid, "substation_id": substation_id, "feeder_type": "incoming_33kv"},
+        {"_id": 1},
+    )
+    if not feeder:
+        return None, (jsonify(
+            error="upstream_feeder_id must reference an incoming 33kV feeder in this substation"
+        ), 400)
+    return fid, None
 
 
 @transformers_bp.get("/substation/<ss_id>")
@@ -43,6 +66,9 @@ def create_transformer(ss_id):
         return jsonify(error="Substation not found"), 404
     if not data.get("capacity_mva"):
         return jsonify(error="capacity_mva required"), 400
+    upstream_id, err = _resolve_upstream_feeder(substation_id, data.get("upstream_feeder_id"))
+    if err:
+        return err
 
     # Auto-sequence
     last = mongo.db.transformers.find_one(
@@ -60,6 +86,7 @@ def create_transformer(ss_id):
         max_loading_mw=data.get("max_loading_mw"),
         max_oti=data.get("max_oti_c"),
         max_wti=data.get("max_wti_c"),
+        upstream_feeder_id=upstream_id,
     )
     res = mongo.db.transformers.insert_one(doc)
     refresh_substation_topology(substation_id)
@@ -84,6 +111,11 @@ def update_transformer(tr_id):
     data = request.get_json(silent=True) or {}
     allowed = {"capacity_mva", "make", "yom", "max_loading_mw", "max_oti_c", "max_wti_c"}
     update = {k: v for k, v in data.items() if k in allowed}
+    if "upstream_feeder_id" in data:
+        upstream_id, err = _resolve_upstream_feeder(substation_id, data.get("upstream_feeder_id"))
+        if err:
+            return err
+        update["upstream_feeder_id"] = upstream_id
     update["updated_at"] = utcnow()
     mongo.db.transformers.update_one({"_id": transformer_id}, {"$set": update})
     refresh_substation_topology(substation_id)

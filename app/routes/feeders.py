@@ -20,6 +20,21 @@ def _ser(f):
     return f
 
 
+def _resolve_transformer(substation_id, raw_value):
+    """Validate an optional transformer_id: it must reference an existing
+    transformer belonging to this substation. Returns
+    (ObjectId | None, error_response | None)."""
+    if not raw_value:
+        return None, None
+    tid, err = parse_object_id(raw_value, "transformer ID")
+    if err:
+        return None, err
+    tr = mongo.db.transformers.find_one({"_id": tid, "substation_id": substation_id}, {"_id": 1})
+    if not tr:
+        return None, (jsonify(error="transformer_id must reference a transformer in this substation"), 400)
+    return tid, None
+
+
 @feeders_bp.get("/substation/<ss_id>")
 @jwt_required()
 def list_feeders(ss_id):
@@ -42,9 +57,12 @@ def create_feeder(ss_id):
         return err
     if not mongo.db.substations.find_one({"_id": substation_id}, {"_id": 1}):
         return jsonify(error="Substation not found"), 404
+    transformer_id, err = _resolve_transformer(substation_id, data.get("transformer_id"))
+    if err:
+        return err
     doc = feeder_doc(
         substation_id=substation_id,
-        transformer_id=data.get("transformer_id"),
+        transformer_id=transformer_id,
         sequence=data.get("sequence", 99),
         name=data.get("name", ""),
         voltage_kv=data.get("voltage_kv", 11),
@@ -81,6 +99,11 @@ def update_feeder(feeder_id):
     for field in ("name", "sequence", "voltage_kv", "feeder_type", "remarks", "is_autorecloser"):
         if field in data:
             update[field] = data[field]
+    if "transformer_id" in data:
+        transformer_id, err = _resolve_transformer(substation_id, data.get("transformer_id"))
+        if err:
+            return err
+        update["transformer_id"] = transformer_id
     for section in ("meter", "switchgear", "dc_supply"):
         if data.get(section):
             for k, v in data[section].items():

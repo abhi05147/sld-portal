@@ -20,14 +20,6 @@ def stats():
     ]))
     total_cap = cap_res[0]["total"] if cap_res else 0
 
-    gss_breakdown = [
-        {"gss": r["_id"] or "Unknown", "substation_count": r["count"]}
-        for r in db.substations.aggregate([
-            {"$group": {"_id": "$gss_primary", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-        ])
-    ]
-
     region_breakdown = [
         {"region": r["_id"] or "Unknown", "count": r["count"]}
         for r in db.substations.aggregate([
@@ -49,7 +41,6 @@ def stats():
         total_11kv_outgoing=total_11_out,
         total_transformers=total_tr,
         total_capacity_mva=round(float(total_cap), 2),
-        gss_breakdown=gss_breakdown,
         region_breakdown=region_breakdown,
         substations_map=ss_map,
     )
@@ -68,6 +59,8 @@ def hierarchy():
             {"gss_primary": gss["name"]},
             {"_id": 1, "name": 1, "topology": 1, "type": 1}
         ))
+        if not subs:
+            continue
         for s in subs:
             sid = str(s["_id"])
             s["_id"] = sid

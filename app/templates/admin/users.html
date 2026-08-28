@@ -83,7 +83,15 @@ async function loadUsers() {
     <tr>
       <td><strong>${u.username}</strong></td>
       <td style="font-size:.85rem">${u.email}</td>
-      <td><span class="badge ${u.role==='admin'?'badge-err':u.role==='engineer'?'badge-warn':'badge-11'}">${u.role}</span></td>
+      <td>
+        ${me && me.id !== u.id ? `
+        <select class="role-select" onchange="changeRole('${u.id}', this.value, this)" data-current="${u.role}">
+          <option value="viewer" ${u.role==='viewer'?'selected':''}>Viewer</option>
+          <option value="engineer" ${u.role==='engineer'?'selected':''}>Engineer</option>
+          <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+        </select>
+        ` : `<span class="badge ${u.role==='admin'?'badge-err':u.role==='engineer'?'badge-warn':'badge-11'}">${u.role}</span>`}
+      </td>
       <td>${u.is_active
         ? '<span class="badge badge-ok">Active</span>'
         : '<span class="badge badge-err">Disabled</span>'}</td>
@@ -127,6 +135,18 @@ async function createUser() {
   if (!res.ok) { toast(d.error || 'Failed', 'error'); return; }
   toast('User created', 'success');
   closeModal(); loadUsers();
+}
+
+async function changeRole(uid, newRole, sel) {
+  const prev = sel.dataset.current;
+  if (newRole === prev) return;
+  if (!confirm(`Change this user's role to "${newRole}"?`)) { sel.value = prev; return; }
+  const res = await apiFetch(`/api/v1/users/${uid}`, {
+    method: 'PATCH', body: JSON.stringify({ role: newRole }),
+  });
+  if (!res || !res.ok) { toast('Failed to change role', 'error'); sel.value = prev; return; }
+  sel.dataset.current = newRole;
+  toast('Role updated', 'success');
 }
 
 async function toggleActive(uid, newState) {

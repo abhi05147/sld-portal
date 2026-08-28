@@ -44,47 +44,30 @@
 <!-- Main grid -->
 <div style="display:grid; grid-template-columns:1fr 340px; gap:20px; align-items:start;">
 
-  <!-- Left: Map + GSS breakdown -->
-  <div style="display:flex; flex-direction:column; gap:20px;">
-
-    <!-- Map -->
-    <div class="card">
-      <div class="card-header"><span class="dot11"></span>Substation Locations</div>
-      <div id="map"></div>
-      <div style="display:flex; gap:16px; margin-top:10px; font-size:.8rem; color:var(--text-sub);">
-        <span>🔴 33 kV Conventional</span>
-        <span>🔵 Compact</span>
-        <span style="cursor:pointer; color:var(--accent11)" onclick="document.getElementById('map').scrollIntoView({behavior:'smooth'})">Click marker to view SLD</span>
-      </div>
+  <!-- Left: Map -->
+  <div class="card">
+    <div class="card-header"><span class="dot11"></span>Substation Locations</div>
+    <div id="map"></div>
+    <div style="display:flex; gap:16px; margin-top:10px; font-size:.8rem; color:var(--text-sub);">
+      <span>🔴 33 kV Conventional</span>
+      <span>🔵 Compact</span>
+      <span style="cursor:pointer; color:var(--accent11)" onclick="document.getElementById('map').scrollIntoView({behavior:'smooth'})">Click marker to view SLD</span>
     </div>
-
-    <!-- GSS Breakdown table -->
-    <div class="card">
-      <div class="card-header"><span class="dot33"></span>Grid Substation Connectivity</div>
-      <div class="table-wrap">
-        <table id="gss-table">
-          <thead><tr>
-            <th>Grid Substation (132/33 kV)</th>
-            <th>Substations Connected</th>
-            <th>Action</th>
-          </tr></thead>
-          <tbody id="gss-tbody">
-            <tr><td colspan="3"><div class="loading-overlay"><div class="spinner"></div> Loading…</div></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
   </div>
 
   <!-- Right: Hierarchy Tree -->
   <div class="card" style="position:sticky; top:70px; max-height:calc(100vh - 90px); overflow-y:auto;">
     <div class="card-header"><span class="dot11"></span>Network Hierarchy</div>
+    <div style="margin-bottom:8px;">
+      <select id="tree-gss-filter" style="width:100%; padding:8px 10px; font-size:.85rem;">
+        <option value="">All Grid Substations</option>
+      </select>
+    </div>
     <div style="margin-bottom:12px;">
       <input type="search" id="tree-search" placeholder="Search substations…" style="width:100%; padding:8px 10px; font-size:.85rem;"/>
     </div>
     <div class="tree" id="hierarchy-tree">
-      <div class="loading-overlay"><div class="spinner"></div></div>
+      <p style="color:var(--text-sub);font-size:.85rem;text-align:center;padding:20px">Select a Grid Substation or search above to view its hierarchy.</p>
     </div>
   </div>
 
@@ -139,19 +122,6 @@ async function loadStats() {
   document.getElementById('stat-tr').textContent  = d.total_transformers;
   document.getElementById('stat-cap').textContent = d.total_capacity_mva;
 
-  // GSS table
-  const tbody = document.getElementById('gss-tbody');
-  if (d.gss_breakdown && d.gss_breakdown.length) {
-    tbody.innerHTML = d.gss_breakdown.map(g => `
-      <tr>
-        <td><strong>${g.gss}</strong></td>
-        <td><span class="badge badge-11">${g.substation_count}</span></td>
-        <td><button class="btn btn-ghost btn-sm" onclick="filterTree('${g.gss}')">Show →</button></td>
-      </tr>`).join('');
-  } else {
-    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-sub);text-align:center">No data yet — upload Excel to begin</td></tr>';
-  }
-
   // Map markers
   if (d.substations_map) addMarkers(d.substations_map);
 }
@@ -163,18 +133,40 @@ async function loadHierarchy() {
   renderTree(tree);
 }
 
-function renderTree(tree, filter = '') {
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function populateGssFilter(tree) {
+  const sel = document.getElementById('tree-gss-filter');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All Grid Substations</option>' + tree
+    .slice()
+    .sort((a, b) => a.gss_name.localeCompare(b.gss_name))
+    .map(g => `<option value="${escapeHtml(g.gss_name)}">${escapeHtml(g.gss_name)} (${(g.substations || []).length})</option>`)
+    .join('');
+  sel.value = [...sel.options].some(o => o.value === current) ? current : '';
+}
+
+function renderTree(tree, textFilter = '', gssFilter = '') {
   const container = document.getElementById('hierarchy-tree');
   if (!tree.length) {
     container.innerHTML = '<p style="color:var(--text-sub);font-size:.85rem;text-align:center;padding:20px">No substations found.<br/>Upload an Excel file to populate.</p>';
     return;
   }
-  container.innerHTML = tree.map(gss => {
+  if (!textFilter && !gssFilter) {
+    container.innerHTML = '<p style="color:var(--text-sub);font-size:.85rem;text-align:center;padding:20px">Select a Grid Substation or search above to view its hierarchy.</p>';
+    return;
+  }
+  const scoped = tree.filter(gss => !gssFilter || gss.gss_name === gssFilter);
+  const rendered = scoped.map(gss => {
     const matchSubs = (gss.substations || []).filter(s =>
-      !filter || s.name.toLowerCase().includes(filter.toLowerCase()) ||
-      gss.gss_name.toLowerCase().includes(filter.toLowerCase())
+      !textFilter || s.name.toLowerCase().includes(textFilter.toLowerCase()) ||
+      gss.gss_name.toLowerCase().includes(textFilter.toLowerCase())
     );
-    if (filter && !matchSubs.length) return '';
+    if (textFilter && !matchSubs.length) return '';
     return `
     <div class="tree-gss">
       <div class="tree-gss-header" onclick="toggleGss(this)">
@@ -201,6 +193,8 @@ function renderTree(tree, filter = '') {
       </div>
     </div>`;
   }).join('');
+
+  container.innerHTML = rendered || '<p style="color:var(--text-sub);font-size:.85rem;text-align:center;padding:20px">No substations match this filter.</p>';
 }
 
 function toggleGss(header) {
@@ -211,21 +205,23 @@ function toggleGss(header) {
   arrow.textContent = isHidden ? '▼' : '▶';
 }
 
-function filterTree(gssName) {
-  document.getElementById('tree-search').value = gssName;
-  loadHierarchyWithFilter(gssName);
-}
-
-async function loadHierarchyWithFilter(filter) {
-  const res = await apiFetch('/api/v1/dashboard/hierarchy');
-  if (!res || !res.ok) return;
-  const tree = await res.json();
-  renderTree(tree, filter);
+function currentTreeFilters() {
+  return {
+    text: document.getElementById('tree-search').value,
+    gss: document.getElementById('tree-gss-filter').value,
+  };
 }
 
 let treeData = null;
 document.getElementById('tree-search').addEventListener('input', function() {
-  if (treeData) renderTree(treeData, this.value);
+  if (!treeData) return;
+  const { gss } = currentTreeFilters();
+  renderTree(treeData, this.value, gss);
+});
+document.getElementById('tree-gss-filter').addEventListener('change', function() {
+  if (!treeData) return;
+  const { text } = currentTreeFilters();
+  renderTree(treeData, text, this.value);
 });
 
 async function loadAll() {
@@ -234,7 +230,9 @@ async function loadAll() {
     const res = await apiFetch('/api/v1/dashboard/hierarchy');
     if (res && res.ok) {
       treeData = await res.json();
-      renderTree(treeData);
+      populateGssFilter(treeData);
+      const { text, gss } = currentTreeFilters();
+      renderTree(treeData, text, gss);
     }
   })()]);
 }

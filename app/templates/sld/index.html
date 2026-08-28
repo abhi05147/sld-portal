@@ -73,7 +73,10 @@
 
       <!-- Transformers -->
       <div class="card">
-        <div class="card-header" style="font-size:.9rem;"><span class="dot33"></span>Power Transformers</div>
+        <div class="card-header" style="font-size:.9rem;display:flex;align-items:center;justify-content:space-between;">
+          <span><span class="dot33"></span>Power Transformers</span>
+          <button class="btn btn-ghost btn-sm" id="add-tr-btn" style="display:none" onclick="openTransformerModal()">+ Add</button>
+        </div>
         <div id="tr-info"></div>
       </div>
 
@@ -82,7 +85,10 @@
 
   <!-- Feeder Details Table -->
   <div class="card" style="margin-top:20px;">
-    <div class="card-header"><span class="dot11"></span>Feeder & Equipment Details</div>
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <span><span class="dot11"></span>Feeder & Equipment Details</span>
+      <button class="btn btn-ghost btn-sm" id="add-feeder-btn" style="display:none" onclick="openFeederModal(null)">+ Add Feeder</button>
+    </div>
     <div class="table-wrap">
       <table id="feeder-table">
         <thead><tr>
@@ -99,7 +105,7 @@
 
   <div class="modal-overlay" id="feeder-modal">
     <div class="modal-card" style="max-width:720px;">
-      <div class="modal-header">Edit Feeder</div>
+      <div class="modal-header" id="feeder-modal-title">Edit Feeder</div>
       <input type="hidden" id="edit-feeder-id"/>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-top:16px;">
         <div class="form-group">
@@ -115,7 +121,7 @@
         </div>
         <div class="form-group">
           <label>Type</label>
-          <select id="edit-feeder-type">
+          <select id="edit-feeder-type" onchange="syncFeederTransformerVisibility()">
             <option value="incoming_33kv">33kV Incoming</option>
             <option value="transformer_hv">Transformer HV</option>
             <option value="incomer_11kv">11kV Incomer</option>
@@ -125,6 +131,12 @@
             <option value="station_transformer">Station Transformer</option>
           </select>
         </div>
+      </div>
+      <div class="form-group" id="edit-feeder-transformer-group" style="display:none">
+        <label>Upstream Transformer</label>
+        <select id="edit-feeder-transformer">
+          <option value="">— Select —</option>
+        </select>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
         <div class="form-group"><label>Meter No.</label><input type="text" id="edit-meter-number"/></div>
@@ -149,6 +161,49 @@
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button class="btn btn-ghost" onclick="closeFeederModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveFeeder()">Save Feeder</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="transformer-modal">
+    <div class="modal-card" style="max-width:520px;">
+      <div class="modal-header">Add Transformer</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+        <div class="form-group">
+          <label>Capacity (MVA)</label>
+          <input type="number" step="0.1" id="new-tr-capacity"/>
+        </div>
+        <div class="form-group">
+          <label>Make</label>
+          <input type="text" id="new-tr-make"/>
+        </div>
+        <div class="form-group">
+          <label>Year of Manufacture</label>
+          <input type="number" id="new-tr-yom"/>
+        </div>
+        <div class="form-group">
+          <label>Max Loading (MW)</label>
+          <input type="number" step="0.1" id="new-tr-max-load"/>
+        </div>
+        <div class="form-group">
+          <label>Max OTI (°C)</label>
+          <input type="number" step="0.1" id="new-tr-oti"/>
+        </div>
+        <div class="form-group">
+          <label>Max WTI (°C)</label>
+          <input type="number" step="0.1" id="new-tr-wti"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Upstream 33kV Feeder</label>
+        <select id="new-tr-upstream">
+          <option value="">— Select —</option>
+        </select>
+        <p id="new-tr-upstream-hint" style="font-size:.78rem;color:var(--text-sub);margin-top:4px;"></p>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-ghost" onclick="closeTransformerModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveTransformer()">Save Transformer</button>
       </div>
     </div>
   </div>
@@ -228,6 +283,8 @@ async function loadSubstationInfo() {
 
   document.getElementById('edit-ss-btn').style.display = canEdit ? '' : 'none';
   document.getElementById('delete-ss-btn').style.display = canDelete ? '' : 'none';
+  document.getElementById('add-tr-btn').style.display = canEdit ? '' : 'none';
+  document.getElementById('add-feeder-btn').style.display = canEdit ? '' : 'none';
   document.querySelectorAll('.feeder-actions').forEach(el => { el.style.display = canEdit ? '' : 'none'; });
 
   document.getElementById('ss-title').textContent = ss.name;
@@ -335,15 +392,34 @@ function setEditValue(id, value) {
   document.getElementById(id).value = value ?? '';
 }
 
+// Feeder types whose HV/LV bay is fed from a specific transformer — mirrors
+// the importer's own linkage rule (app/services/importer.py).
+const TRANSFORMER_LINKED_TYPES = new Set(['incomer_11kv', 'outgoing_11kv', 'transformer_hv']);
+
+function populateFeederTransformerOptions() {
+  const sel = document.getElementById('edit-feeder-transformer');
+  const trs = currentSubstation?.transformers || [];
+  sel.innerHTML = '<option value="">— Select —</option>' + trs.map(t =>
+    `<option value="${t._id}">Transformer ${escapeHtml(t.sequence)} — ${escapeHtml(t.capacity_mva)} MVA</option>`
+  ).join('');
+}
+
+function syncFeederTransformerVisibility() {
+  const needsTr = TRANSFORMER_LINKED_TYPES.has(document.getElementById('edit-feeder-type').value);
+  document.getElementById('edit-feeder-transformer-group').style.display = needsTr ? '' : 'none';
+}
+
 function openFeederModal(id) {
-  const feeder = feedersById[id];
-  if (!feeder) return;
-  const mt = feeder.meter || {};
-  const sg = feeder.switchgear || {};
-  setEditValue('edit-feeder-id', feeder._id);
-  setEditValue('edit-feeder-name', feeder.name);
-  setEditValue('edit-feeder-voltage', feeder.voltage_kv || 11);
-  setEditValue('edit-feeder-type', feeder.feeder_type || 'outgoing_11kv');
+  populateFeederTransformerOptions();
+  const feeder = id ? feedersById[id] : null;
+  const mt = feeder?.meter || {};
+  const sg = feeder?.switchgear || {};
+  document.getElementById('feeder-modal-title').textContent = feeder ? 'Edit Feeder' : 'Add Feeder';
+  setEditValue('edit-feeder-id', feeder ? feeder._id : '');
+  setEditValue('edit-feeder-name', feeder ? feeder.name : '');
+  setEditValue('edit-feeder-voltage', feeder ? (feeder.voltage_kv || 11) : 11);
+  setEditValue('edit-feeder-type', feeder ? (feeder.feeder_type || 'outgoing_11kv') : 'outgoing_11kv');
+  setEditValue('edit-feeder-transformer', feeder ? (feeder.transformer_id || '') : '');
   setEditValue('edit-meter-number', mt.number);
   setEditValue('edit-meter-ctr', mt.ctr);
   setEditValue('edit-meter-mf', mt.mf);
@@ -351,7 +427,8 @@ function openFeederModal(id) {
   setEditValue('edit-panel-make', sg.panel_make);
   setEditValue('edit-relay-type', sg.oc_ef_relay_type);
   setEditValue('edit-vcb-status', sg.vcb_status);
-  document.getElementById('edit-is-ar').checked = !!feeder.is_autorecloser;
+  document.getElementById('edit-is-ar').checked = !!(feeder && feeder.is_autorecloser);
+  syncFeederTransformerVisibility();
   document.getElementById('feeder-modal').classList.add('open');
 }
 
@@ -362,11 +439,18 @@ function closeFeederModal() {
 async function saveFeeder() {
   const id = document.getElementById('edit-feeder-id').value;
   const name = document.getElementById('edit-feeder-name').value.trim();
-  if (!id || !name) { toast('Feeder name is required', 'error'); return; }
+  const feederType = document.getElementById('edit-feeder-type').value;
+  const transformerId = document.getElementById('edit-feeder-transformer').value;
+  if (!name) { toast('Feeder name is required', 'error'); return; }
+  if (TRANSFORMER_LINKED_TYPES.has(feederType) && !transformerId) {
+    toast('Select the upstream transformer for this feeder type', 'error');
+    return;
+  }
   const body = {
     name,
     voltage_kv: parseInt(document.getElementById('edit-feeder-voltage').value),
-    feeder_type: document.getElementById('edit-feeder-type').value,
+    feeder_type: feederType,
+    transformer_id: TRANSFORMER_LINKED_TYPES.has(feederType) ? (transformerId || null) : null,
     is_autorecloser: document.getElementById('edit-is-ar').checked,
     meter: {
       number: document.getElementById('edit-meter-number').value.trim() || null,
@@ -380,14 +464,70 @@ async function saveFeeder() {
       vcb_status: document.getElementById('edit-vcb-status').value || null,
     },
   };
-  const res = await apiFetch(`/api/v1/feeders/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  const res = id
+    ? await apiFetch(`/api/v1/feeders/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+    : await apiFetch(`/api/v1/feeders/substation/${SS_ID}`, { method: 'POST', body: JSON.stringify(body) });
   if (!res || !res.ok) {
     const d = res ? await res.json().catch(() => ({})) : {};
     toast(d.error || 'Failed to save feeder', 'error');
     return;
   }
   closeFeederModal();
-  toast('Feeder updated', 'success');
+  toast(id ? 'Feeder updated' : 'Feeder added', 'success');
+  loadSubstationInfo();
+  loadSLD();
+}
+
+function populateTransformerUpstreamOptions() {
+  const sel = document.getElementById('new-tr-upstream');
+  const hint = document.getElementById('new-tr-upstream-hint');
+  const inc33 = (currentSubstation?.feeders || []).filter(f => f.feeder_type === 'incoming_33kv');
+  sel.innerHTML = '<option value="">— Select —</option>' + inc33.map(f =>
+    `<option value="${f._id}">${escapeHtml(f.name)}</option>`
+  ).join('');
+  hint.textContent = inc33.length
+    ? 'Determines where this transformer is drawn on the 33kV bus.'
+    : 'No 33kV incoming feeders yet — add one first; until then this transformer is grouped after all incomers by default.';
+}
+
+function openTransformerModal() {
+  populateTransformerUpstreamOptions();
+  ['new-tr-capacity', 'new-tr-make', 'new-tr-yom', 'new-tr-max-load', 'new-tr-oti', 'new-tr-wti', 'new-tr-upstream']
+    .forEach(id => setEditValue(id, ''));
+  document.getElementById('transformer-modal').classList.add('open');
+}
+
+function closeTransformerModal() {
+  document.getElementById('transformer-modal').classList.remove('open');
+}
+
+async function saveTransformer() {
+  const capacity = parseFloat(document.getElementById('new-tr-capacity').value);
+  if (!capacity) { toast('Capacity (MVA) is required', 'error'); return; }
+  const upstreamSel = document.getElementById('new-tr-upstream');
+  if (upstreamSel.options.length > 1 && !upstreamSel.value) {
+    toast('Select the upstream 33kV feeder', 'error');
+    return;
+  }
+  const body = {
+    capacity_mva: capacity,
+    make: document.getElementById('new-tr-make').value.trim() || null,
+    yom: parseInt(document.getElementById('new-tr-yom').value) || null,
+    max_loading_mw: parseFloat(document.getElementById('new-tr-max-load').value) || null,
+    max_oti_c: parseFloat(document.getElementById('new-tr-oti').value) || null,
+    max_wti_c: parseFloat(document.getElementById('new-tr-wti').value) || null,
+    upstream_feeder_id: upstreamSel.value || null,
+  };
+  const res = await apiFetch(`/api/v1/transformers/substation/${SS_ID}`, {
+    method: 'POST', body: JSON.stringify(body),
+  });
+  if (!res || !res.ok) {
+    const d = res ? await res.json().catch(() => ({})) : {};
+    toast(d.error || 'Failed to add transformer', 'error');
+    return;
+  }
+  closeTransformerModal();
+  toast('Transformer added', 'success');
   loadSubstationInfo();
   loadSLD();
 }

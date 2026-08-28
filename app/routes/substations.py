@@ -44,7 +44,9 @@ def get_substation(ss_id):
     trs = list(mongo.db.transformers.find({"substation_id": ObjectId(ss_id)}).sort("sequence", 1))
     fds = list(mongo.db.feeders.find({"substation_id": ObjectId(ss_id)}).sort("sequence", 1))
     result = _serialize(doc)
-    result["transformers"] = [{**t, "_id": str(t["_id"]), "substation_id": ss_id} for t in trs]
+    result["transformers"] = [{**t, "_id": str(t["_id"]), "substation_id": ss_id,
+                               "upstream_feeder_id": str(t["upstream_feeder_id"]) if t.get("upstream_feeder_id") else None}
+                              for t in trs]
     result["feeders"] = [{**f, "_id": str(f["_id"]), "substation_id": ss_id,
                           "transformer_id": str(f["transformer_id"]) if f.get("transformer_id") else None}
                          for f in fds]

@@ -59,7 +59,8 @@ def substation_doc(
 # ── Power Transformer ─────────────────────────────────────────────────────────
 
 def transformer_doc(substation_id, sequence, capacity_mva, make, yom,
-                    max_loading_mw=None, max_oti=None, max_wti=None) -> dict:
+                    max_loading_mw=None, max_oti=None, max_wti=None,
+                    upstream_feeder_id=None) -> dict:
     return {
         "substation_id": ObjectId(substation_id),
         "sequence": sequence,                    # 1, 2, ...
@@ -70,6 +71,11 @@ def transformer_doc(substation_id, sequence, capacity_mva, make, yom,
         "max_oti_c": max_oti,
         "max_wti_c": max_wti,
         "is_station_transformer": False,
+        # The incoming_33kv feeder this transformer draws from. Optional —
+        # left unset, the transformer is placed after all incoming feeders
+        # as one block (sld_generator._layout's default). Set, it is drawn
+        # immediately after that feeder's bay.
+        "upstream_feeder_id": ObjectId(upstream_feeder_id) if upstream_feeder_id else None,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }

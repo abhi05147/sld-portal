@@ -77,9 +77,9 @@ def _ss(name="Ulubari", bus_config="single_bus", **kw):
     return d
 
 
-def _tr(ss, seq, cap=10.0):
+def _tr(ss, seq, cap=10.0, upstream_feeder_id=None):
     t = transformer_doc(substation_id=ss["_id"], sequence=seq, capacity_mva=cap,
-                        make="BHEL", yom=2015)
+                        make="BHEL", yom=2015, upstream_feeder_id=upstream_feeder_id)
     t["_id"] = ObjectId()
     return t
 
@@ -139,6 +139,45 @@ def test_layout_unassigned_11kv_feeders_round_robin_across_sections():
     _, _, scene = _build(ss, feeders, [t1, t2])
     counts = sorted(len(s.feeder_bays) for s in scene.sections11)
     assert counts == [1, 2]  # 3 feeders split 2/1 across 2 sections
+
+
+def test_layout_transformer_grouped_under_its_upstream_33kv_feeder():
+    """A transformer with upstream_feeder_id set is drawn immediately after
+    that incoming feeder's bay, ahead of transformers with no link at all."""
+    ss = _ss()
+    inc1 = _fd(ss, 1, "33kV Incomer-1", "incoming_33kv", 33)
+    inc2 = _fd(ss, 2, "33kV Incomer-2", "incoming_33kv", 33)
+    t1 = _tr(ss, 1, upstream_feeder_id=inc2["_id"])   # linked to the 2nd incomer
+    t2 = _tr(ss, 2)                                    # unlinked
+    feeders = [inc1, inc2,
+               _fd(ss, 3, "F1", "outgoing_11kv", 11, tr=t1),
+               _fd(ss, 4, "F2", "outgoing_11kv", 11, tr=t2)]
+    _, _, scene = _build(ss, feeders, [t1, t2])
+    kinds = [b.kind for b in scene.bays33]
+    # inc1, inc2, t1 (grouped right after inc2), t2 (unlinked, trailing), bus_pt
+    assert kinds == ["incomer_33kv", "incomer_33kv", "transformer", "transformer", "bus_pt_33"]
+    trs_in_bay_order = [b.ref["_id"] for b in scene.bays33 if b.kind == "transformer"]
+    assert trs_in_bay_order == [t1["_id"], t2["_id"]]
+    # the 11 kV sections are reordered right along with the bays
+    assert scene.sections11[0].incomer_bay.ref["_id"] == t1["_id"]
+    assert scene.sections11[1].incomer_bay.ref["_id"] == t2["_id"]
+
+
+def test_layout_transformer_with_no_upstream_feeder_falls_after_all_incomers():
+    """Back-compat: transformers created before upstream_feeder_id existed
+    (or left unset) land after every incoming feeder, in sequence order —
+    the pre-existing default block layout."""
+    ss = _ss()
+    inc1 = _fd(ss, 1, "33kV Incomer-1", "incoming_33kv", 33)
+    t1, t2 = _tr(ss, 1), _tr(ss, 2)
+    feeders = [inc1,
+               _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1),
+               _fd(ss, 3, "F2", "outgoing_11kv", 11, tr=t2)]
+    _, _, scene = _build(ss, feeders, [t1, t2])
+    kinds = [b.kind for b in scene.bays33]
+    assert kinds == ["incomer_33kv", "transformer", "transformer", "bus_pt_33"]
+    trs_in_bay_order = [b.ref["_id"] for b in scene.bays33 if b.kind == "transformer"]
+    assert trs_in_bay_order == [t1["_id"], t2["_id"]]
 
 
 def test_layout_transformer_bay_never_reaches_11kv_band():
@@ -476,6 +515,52 @@ def test_transformer_and_section_stay_aligned_for_a_single_transformer():
     for fb in sec.feeder_bays:
         assert sec.bus[0] <= fb.x <= sec.bus[1]
         assert fb.x != sec.incomer_bay.x
+
+
+def test_render_transformer_symbol_label_includes_sequence_number():
+    """The 'Tr-N' number must be readable right next to the transformer icon
+    itself, not only in the bay title text above the 33 kV bus."""
+    ss = _ss()
+    t1, t2 = _tr(ss, 1), _tr(ss, 2)
+    feeders = [
+        _fd(ss, 1, "33kV UG Incomer-1", "incoming_33kv", 33),
+        _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1),
+        _fd(ss, 3, "F2", "outgoing_11kv", 11, tr=t2),
+    ]
+    db = FakeDB(substations=[ss], feeders=feeders, transformers=[t1, t2])
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+    root = ET.fromstring(svg)
+    # the legend also draws one unlabelled "sym-tr" glyph — include it, its
+    # empty tspan text just won't match either sequence number below.
+    tr_groups = [g for g in root.iter(SVG_NS + "g") if g.get("class") == "sym-tr"]
+    labels = {"".join(t.text or "" for t in g.iter(SVG_NS + "tspan")) for g in tr_groups}
+    assert any("Tr-1" in l for l in labels)
+    assert any("Tr-2" in l for l in labels)
+
+
+def test_render_ocef_marker_sits_below_ct_not_beside_its_ratio_label():
+    """OC/EF is the CT's own relay: it shares the CT's column (not a separate
+    step in the vertical equipment stack) but sits below it, clear of the
+    CT's ratio label — which, like every other equipment label, reads to the
+    right — instead of overlapping it."""
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    f = _fd(ss, 1, "33kV A O/g", "outgoing_33kv", 33)
+    f["switchgear"]["oc_ef_relay_type"] = "Numerical"
+    feeders = [f, _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1)]
+    db = FakeDB(substations=[ss], feeders=feeders, transformers=[t1])
+    svg = SLDGenerator(db).generate(str(ss["_id"]))
+    root = ET.fromstring(svg)
+
+    def _xy(cls):
+        g = next(g for g in root.iter(SVG_NS + "g") if g.get("class") == cls)
+        m = re.match(r"translate\(([-\d.]+),([-\d.]+)\)", g.get("transform", ""))
+        return float(m.group(1)), float(m.group(2))
+
+    ct_x, ct_y = _xy("sym-ct")
+    ocef_x, ocef_y = _xy("sym-ocef")
+    assert ocef_x == ct_x                          # same bay column
+    assert ct_y < ocef_y < G.Y["bus33"]             # below the CT, short of the bus
 
 
 def test_render_includes_legend_text():
