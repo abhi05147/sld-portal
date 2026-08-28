@@ -10,6 +10,9 @@ Colour scheme:
 """
 from bson import ObjectId
 
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
 AR_KEYWORDS = {"autorecloser", "auto recloser", "tavrida", "noja", "schneider ar"}
 
 RATINGS = {
@@ -243,9 +246,218 @@ def sym_bus_coupler_horizontal(x, y, color="#333333"):
   </g>"""
 
 
+LAYOUT = {"MARGIN": 80, "BAY_W": 130, "FEEDER_W": 110, "MIN_W": 940}
+
+Y = {
+    "title": 8, "bay33_top": 74, "bay33_bot": 300, "bus33": 330,
+    "tr_top": 366, "tr_bot": 476, "bus11": 524, "feed_top": 560,
+    "feed_bot": 664, "legend": 704,
+}
+
+
+@dataclass
+class Equip:
+    kind: str                       # "la"|"isolator"|"vcb"|"ar"|"ct"|"ocef"
+    label: str = ""
+    has_earth: bool = False
+
+
+@dataclass
+class Bay:
+    kind: str                       # see spec §2.1
+    x: int
+    label: str = ""
+    segment: int = 0
+    voltage_kv: int = 33
+    equipment: list = field(default_factory=list)
+    ref: dict = None
+
+
+@dataclass
+class Bus:
+    y: int
+    segments: list                  # list[tuple[int, int]]
+    coupler_x: int = None
+
+
+@dataclass
+class Section:
+    tr_index: int
+    bus: tuple                      # (x0, x1, y)
+    incomer_bay: Bay
+    bus_pt_x: int
+    feeder_bays: list = field(default_factory=list)
+
+
+@dataclass
+class Coupler:
+    orientation: str                # "h33" | "h11"
+    between: tuple
+    x: int
+
+
+@dataclass
+class LegendEntry:
+    glyph_kind: str
+    name: str
+    description: str
+
+
+@dataclass
+class LegendBox:
+    x: int
+    y: int
+    w: int
+    h: int
+    entries: list = field(default_factory=list)
+
+
+@dataclass
+class TitleBlock:
+    name: str
+    last_update_str: str
+    source_str: str
+
+
+@dataclass
+class Scene:
+    width: int
+    height: int
+    title: TitleBlock
+    bus33: Bus
+    bays33: list
+    sections11: list
+    couplers11: list
+    legend: LegendBox = None
+
+
 class SLDGenerator:
     def __init__(self, db):
         self.db = db
+
+    # ── layout phase ────────────────────────────────────────────────────
+    def _layout(self, ss, feeders, transformers):
+        M = LAYOUT["MARGIN"]
+        by_type = {}
+        for f in feeders:
+            by_type.setdefault(f["feeder_type"], []).append(f)
+        inc33   = sorted(by_type.get("incoming_33kv", []), key=lambda f: f.get("sequence", 0))
+        out33   = sorted(by_type.get("outgoing_33kv", []), key=lambda f: f.get("sequence", 0))
+        stn     = by_type.get("station_transformer", [])
+        trs     = sorted(transformers, key=lambda t: t.get("sequence", 0))
+
+        # feeders -> section index
+        tr_id_to_idx = {t["_id"]: i for i, t in enumerate(trs)}
+        sec_feeders = [[] for _ in trs] or [[]]
+        rr = 0
+        for f in sorted(by_type.get("outgoing_11kv", []), key=lambda f: f.get("sequence", 0)):
+            idx = tr_id_to_idx.get(f.get("transformer_id"))
+            if idx is None:
+                idx = rr % len(sec_feeders)
+                rr += 1
+            sec_feeders[idx].append(f)
+
+        # ---- horizontal sizing ----
+        n_sec = max(len(trs), 1)
+        sec_widths = [max(1, len(sec_feeders[i])) * LAYOUT["FEEDER_W"] + LAYOUT["FEEDER_W"]
+                      for i in range(n_sec)]
+        n_bays33 = len(inc33) + len(trs) + len(out33) + len(stn) + 1  # +1 bus PT
+        width = max(LAYOUT["MIN_W"],
+                    n_bays33 * LAYOUT["BAY_W"] + 2 * M,
+                    sum(sec_widths) + 2 * M)
+
+        # ---- 33 kV bays, left -> right ----
+        bays33 = []
+        x = M + LAYOUT["BAY_W"] // 2
+        for f in inc33:
+            bays33.append(self._bay_33kv(f, x, 0)); x += LAYOUT["BAY_W"]
+        for t in trs:
+            bays33.append(self._bay_transformer(t, x, 0)); x += LAYOUT["BAY_W"]
+        for f in out33:
+            bays33.append(self._bay_33kv(f, x, 0)); x += LAYOUT["BAY_W"]
+        for f in stn:
+            b = self._bay_33kv(f, x, 0)
+            b.kind = "station_transformer"
+            b.equipment = [Equip("la", RATINGS["la"]), Equip("isolator", RATINGS["iso_33"])]
+            bays33.append(b); x += LAYOUT["BAY_W"]
+        bus_pt = Bay(kind="bus_pt_33", x=width - M, label="33kV Bus PT", voltage_kv=33)
+        bays33.append(bus_pt)
+
+        bus33 = Bus(y=Y["bus33"], segments=[(M, width - M)], coupler_x=None)
+
+        # ---- 11 kV sections ----
+        sections11 = []
+        sx = M
+        for i in range(n_sec):
+            x0, x1 = sx, sx + sec_widths[i]
+            tr = trs[i] if i < len(trs) else None
+            fx = x0 + LAYOUT["FEEDER_W"]
+            fbays = []
+            for f in sec_feeders[i]:
+                fbays.append(self._bay_11kv_feeder(f, fx)); fx += LAYOUT["FEEDER_W"]
+            inc_bay = self._bay_11kv_incomer(tr, x0 + LAYOUT["FEEDER_W"] // 2)
+            sections11.append(Section(tr_index=i, bus=(x0, x1, Y["bus11"]),
+                                      incomer_bay=inc_bay, bus_pt_x=x0 + 10,
+                                      feeder_bays=fbays))
+            sx = x1
+
+        # ---- title ----
+        updated = ss.get("updated_at") or datetime.now(timezone.utc)
+        topo = ss.get("topology", {})
+        title = TitleBlock(
+            name=ss.get("name", "Substation"),
+            last_update_str=updated.strftime("%d.%m.%Y"),
+            source_str=f'SOURCE: {ss.get("gss_primary", "—")} · '
+                       f'{(topo.get("bus_config") or "single_bus").replace("_", " ").title()}',
+        )
+
+        return Scene(width=width, height=Y["legend"], title=title, bus33=bus33,
+                     bays33=bays33, sections11=sections11, couplers11=[], legend=None)
+
+    # ── bay builders ───────────────────────────────────────────────────
+    def _bay_33kv(self, feeder, x, segment):
+        v = "33"
+        sg = feeder.get("switchgear", {})
+        ar = is_autorecloser(feeder)
+        eq = [
+            Equip("la", RATINGS["la"]),
+            Equip("isolator", RATINGS["iso_33"], has_earth=False),
+            Equip("ar" if ar else "vcb",
+                  (sg.get("vcb_make") or "VCB") + "\n" + RATINGS["vcb_33"]),
+            Equip("ct", feeder.get("meter", {}).get("ctr") or RATINGS["ct"]),
+        ]
+        if sg.get("oc_ef_relay_type"):
+            eq.append(Equip("ocef"))
+        kind = "incomer_33kv" if feeder["feeder_type"] == "incoming_33kv" else "outgoing_33kv"
+        return Bay(kind=kind, x=x, label=feeder["name"], segment=segment,
+                   voltage_kv=33, equipment=eq, ref=feeder)
+
+    def _bay_transformer(self, tr, x, segment):
+        cap = tr.get("capacity_mva", "?")
+        return Bay(kind="transformer", x=x, segment=segment, voltage_kv=33,
+                   label=f'{cap} MVA 33/11kV Pr. Transformer - {tr.get("sequence", "")}',
+                   equipment=[Equip("isolator", RATINGS["iso_33"], has_earth=True)],
+                   ref=tr)
+
+    def _bay_11kv_feeder(self, feeder, x):
+        sg = feeder.get("switchgear", {})
+        ar = is_autorecloser(feeder)
+        eq = [
+            Equip("isolator", RATINGS["iso_11"], has_earth=True),
+            Equip("ar" if ar else "vcb",
+                  (sg.get("vcb_make") or "VCB") + "\n" + RATINGS["vcb_11"]),
+            Equip("ct", feeder.get("meter", {}).get("ctr") or RATINGS["ct"]),
+        ]
+        return Bay(kind="outgoing_11kv", x=x, label=feeder["name"], voltage_kv=11,
+                   equipment=eq, ref=feeder)
+
+    def _bay_11kv_incomer(self, tr, x):
+        seq = tr.get("sequence", "") if tr else ""
+        return Bay(kind="incomer_11kv", x=x, voltage_kv=11,
+                   label=f"11kV I/C-{seq}",
+                   equipment=[Equip("vcb", "VCB\n" + RATINGS["vcb_11"]),
+                              Equip("ct", RATINGS["ct"])],
+                   ref=tr)
 
     def generate(self, substation_id: str) -> str:
         ss = self.db.substations.find_one({"_id": ObjectId(substation_id)})

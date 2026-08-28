@@ -60,3 +60,88 @@ def test_sym_bus_coupler_horizontal_has_breaker_and_isolators():
     out = G.sym_bus_coupler_horizontal(300, 330)
     assert out.count("<line") >= 3   # iso - vcb - iso across the break
     assert "translate(300" in out or 'x1="300' in out
+
+
+# ── _layout: degenerate / single-transformer ─────────────────────────────
+def _ss(name="Ulubari", bus_config="single_bus", **kw):
+    d = substation_doc(name=name, region="LAR", circle="GEC-II", tnc="T", esd="E",
+                       gps_lat=26.1, gps_lon=91.7, sub_type="Conventional",
+                       gss_primary="132kV Sishugram GSS", **kw)
+    d["_id"] = ObjectId()
+    d["topology"]["bus_config"] = bus_config
+    return d
+
+
+def _tr(ss, seq, cap=10.0):
+    t = transformer_doc(substation_id=ss["_id"], sequence=seq, capacity_mva=cap,
+                        make="BHEL", yom=2015)
+    t["_id"] = ObjectId()
+    return t
+
+
+def _fd(ss, seq, name, ftype, volt=11, tr=None):
+    f = feeder_doc(substation_id=ss["_id"],
+                   transformer_id=(tr["_id"] if tr else None),
+                   sequence=seq, name=name, voltage_kv=volt, feeder_type=ftype)
+    f["_id"] = ObjectId()
+    return f
+
+
+def _build(ss, feeders, transformers):
+    db = FakeDB(substations=[ss], feeders=feeders, transformers=transformers)
+    gen = SLDGenerator(db)
+    scene = gen._layout(ss, sorted(feeders, key=lambda x: x["sequence"]), transformers)
+    return db, gen, scene
+
+
+def test_layout_single_transformer_scene_shape():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    feeders = [
+        _fd(ss, 1, "33kV UG Incomer-1", "incoming_33kv", 33),
+        _fd(ss, 2, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 3, "New Ulubari", "outgoing_11kv", 11, tr=t1),
+        _fd(ss, 4, "East", "outgoing_11kv", 11, tr=t1),
+        _fd(ss, 5, "Rehabari", "outgoing_11kv", 11, tr=t1),
+    ]
+    _, _, scene = _build(ss, feeders, [t1])
+
+    assert scene.bus33.coupler_x is None
+    assert len(scene.bus33.segments) == 1
+    assert scene.couplers11 == []
+    assert len(scene.sections11) == 1
+    kinds = [b.kind for b in scene.bays33]
+    assert kinds.count("incomer_33kv") == 1
+    assert kinds.count("transformer") == 1
+    assert kinds.count("bus_pt_33") == 1
+    assert kinds[-1] == "bus_pt_33"  # pinned rightmost
+    sec = scene.sections11[0]
+    assert [b.label for b in sec.feeder_bays] == ["New Ulubari", "East", "Rehabari"]
+    assert scene.title.name == "Ulubari"
+    assert re.match(r"\d{2}\.\d{2}\.\d{4}$", scene.title.last_update_str)
+
+
+def test_layout_unassigned_11kv_feeders_round_robin_across_sections():
+    ss = _ss()
+    t1, t2 = _tr(ss, 1), _tr(ss, 2)
+    feeders = [
+        _fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 2, "Tr-2 HV", "transformer_hv", 33, tr=t2),
+        _fd(ss, 3, "F1", "outgoing_11kv", 11),   # no transformer_id
+        _fd(ss, 4, "F2", "outgoing_11kv", 11),
+        _fd(ss, 5, "F3", "outgoing_11kv", 11),
+    ]
+    _, _, scene = _build(ss, feeders, [t1, t2])
+    counts = sorted(len(s.feeder_bays) for s in scene.sections11)
+    assert counts == [1, 2]  # 3 feeders split 2/1 across 2 sections
+
+
+def test_layout_transformer_bay_never_reaches_11kv_band():
+    ss = _ss()
+    t1 = _tr(ss, 1)
+    feeders = [_fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+               _fd(ss, 2, "F1", "outgoing_11kv", 11, tr=t1)]
+    _, _, scene = _build(ss, feeders, [t1])
+    tr_bay = next(b for b in scene.bays33 if b.kind == "transformer")
+    assert tr_bay.x == scene.sections11[0].bus[0] or tr_bay.x >= G.LAYOUT["MARGIN"]
+    assert G.Y["tr_bot"] < G.Y["bus11"]
