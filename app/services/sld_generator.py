@@ -427,8 +427,14 @@ class SLDGenerator:
                        f'{(topo.get("bus_config") or "single_bus").replace("_", " ").title()}',
         )
 
+        n_11_bc = sum(1 for f in by_type.get("bus_coupler", []) if f.get("voltage_kv") != 33)
+        couplers11 = []
+        for k in range(min(n_11_bc, max(len(sections11) - 1, 0))):
+            gap_x = (sections11[k].bus[1] + sections11[k + 1].bus[0]) // 2
+            couplers11.append(Coupler(orientation="h11", between=(k, k + 1), x=gap_x))
+
         return Scene(width=width, height=Y["legend"], title=title, bus33=bus33,
-                     bays33=bays33, sections11=sections11, couplers11=[], legend=None)
+                     bays33=bays33, sections11=sections11, couplers11=couplers11, legend=None)
 
     # ── bay builders ───────────────────────────────────────────────────
     def _bay_33kv(self, feeder, x, segment):

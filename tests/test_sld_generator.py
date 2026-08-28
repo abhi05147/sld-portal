@@ -240,3 +240,44 @@ def test_layout_33kv_coupler_two_segments_and_split_bays():
     # segments are contiguous and meet at coupler_x
     (a0, a1), (b0, b1) = scene.bus33.segments
     assert a1 <= scene.bus33.coupler_x <= b0 or a1 == b0
+
+
+# ── _layout: 11 kV bus couplers ─────────────────────────────────────────
+def test_layout_two_sections_one_11kv_coupler():
+    ss = _ss(bus_config="sectionalized_11kv")
+    t1, t2 = _tr(ss, 1), _tr(ss, 2)
+    feeders = [
+        _fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 2, "Tr-2 HV", "transformer_hv", 33, tr=t2),
+        _fd(ss, 3, "11kV Bus Coupler", "bus_coupler", 11),
+        _fd(ss, 4, "F1", "outgoing_11kv", 11, tr=t1),
+        _fd(ss, 5, "F2", "outgoing_11kv", 11, tr=t2),
+    ]
+    _, _, scene = _build(ss, feeders, [t1, t2])
+    assert len(scene.couplers11) == 1
+    c = scene.couplers11[0]
+    assert c.orientation == "h11" and c.between == (0, 1)
+    s0x1 = scene.sections11[0].bus[1]
+    s1x0 = scene.sections11[1].bus[0]
+    assert min(s0x1, s1x0) - 5 <= c.x <= max(s0x1, s1x0) + 5
+
+
+def test_layout_three_sections_one_coupler_leaves_third_isolated():
+    ss = _ss(bus_config="sectionalized_both")
+    trs = [_tr(ss, 1), _tr(ss, 2), _tr(ss, 3)]
+    _, _, scene = _build(ss, _ulubari_feeders(ss, trs), trs)
+    assert len(scene.sections11) == 3
+    assert [c.between for c in scene.couplers11] == [(0, 1)]  # sections 1-2 coupled, 3 isolated
+
+
+def test_layout_more_coupler_records_than_gaps_are_ignored():
+    ss = _ss()
+    t1, t2 = _tr(ss, 1), _tr(ss, 2)
+    feeders = [
+        _fd(ss, 1, "Tr-1 HV", "transformer_hv", 33, tr=t1),
+        _fd(ss, 2, "Tr-2 HV", "transformer_hv", 33, tr=t2),
+        _fd(ss, 3, "11kV Bus Coupler A", "bus_coupler", 11),
+        _fd(ss, 4, "11kV Bus Coupler B", "bus_coupler", 11),
+    ]
+    _, _, scene = _build(ss, feeders, [t1, t2])
+    assert len(scene.couplers11) == 1  # only one gap available
